@@ -1,0 +1,20 @@
+---
+# role: dovecot
+# file: molecule/resources/playbooks/cleanup.yml
+
+- name: DOVECOT | Preserve service diagnostics before failed instances are removed
+  hosts: dovecot_servers
+  gather_facts: false
+  tasks:
+
+    - name: DOVECOT | Read the recent service journal
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: [journalctl, --unit=dovecot, --no-pager, --lines=60]
+      register: __dovecot_journal
+      changed_when: false
+
+    - name: DOVECOT | Include service diagnostics in the test log
+      ansible.builtin.debug:
+        var: __dovecot_journal.stdout_lines

@@ -1,0 +1,124 @@
+---
+# role: dovecot
+# file: molecule/resources/tasks/member.yml
+
+- name: DOVECOT | Resolve the member FQDN
+  become: true
+  become_user: root
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\s*{{ ansible_facts.default_ipv4.address | regex_escape }}\s+'
+    line: "{{ ansible_facts.default_ipv4.address }} {{ inventory_hostname }}.mail.test {{ inventory_hostname }}"
+    unsafe_writes: true
+
+- name: DOVECOT | Use the fixture domain DNS
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    content: "nameserver {{ hostvars['dc-dovecot'].ansible_facts.default_ipv4.address }}\nsearch mail.test\n"
+    mode: '0644'
+    unsafe_writes: true
+
+- name: DOVECOT | Join the domain and configure Winbind and native PAM through their roles
+  ansible.builtin.include_role:
+    name: jomrr.samba_ad_member
+  vars:
+    samba_ad_member_realm: MAIL.TEST
+    samba_ad_member_domain: MAIL
+    samba_ad_member_server: dc-dovecot.mail.test
+    samba_ad_member_join_password: "{{ __dovecot_ad_admin_password }}"
+    samba_ad_member_netbios_name: "{{ inventory_hostname | upper }}"
+    samba_ad_member_idmap_backend: rid
+    samba_ad_member_winbind_use_default_domain: true
+    samba_ad_member_idmap_range: 10000-39999
+    samba_ad_member_idmap_default_range: 40000-59999
+    samba_ad_member_pam_winbind_options:
+      krb5_auth: true
+      cached_login: false
+    pam_authselect_force: true
+    pam_mkhomedir: false
+
+- name: DOVECOT | Prepare the service keytab reader group
+  become: true
+  become_user: root
+  ansible.builtin.group:
+    name: dovecot
+    system: true
+
+- name: DOVECOT | Create an unprivileged authentication worker fixture
+  become: true
+  become_user: root
+  ansible.builtin.user:
+    name: doveauth
+    group: dovecot
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    password_lock: true
+
+- name: DOVECOT | Read the externally provisioned service keytab
+  become: true
+  become_user: root
+  ansible.builtin.slurp:
+    src: "/etc/dovecot-test/{{ inventory_hostname }}.keytab"
+  delegate_to: dc-dovecot
+  register: __dovecot_service_keytab
+  no_log: true
+
+- name: DOVECOT | Distribute the fixture service keytab outside the tested role
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/dovecot-test/service.keytab
+    content: "{{ __dovecot_service_keytab.content | b64decode }}"
+    owner: root
+    group: dovecot
+    mode: '0640'
+  no_log: true
+
+- name: DOVECOT | Read the fixture directory and database trust anchor
+  become: true
+  become_user: root
+  ansible.builtin.slurp:
+    src: /etc/dovecot-test/server.pem
+  delegate_to: dc-dovecot
+  register: __dovecot_directory_ca
+
+- name: DOVECOT | Install the fixture directory and database trust anchor
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/dovecot-test/directory-ca.pem
+    content: "{{ __dovecot_directory_ca.content | b64decode }}"
+    mode: '0644'
+
+- name: DOVECOT | Create a genuine local Unix account for pam_unix
+  become: true
+  become_user: root
+  ansible.builtin.user:
+    name: pamlocal
+    uid: 6001
+    create_home: false
+    shell: /bin/bash
+    password: '$6$dovecotfixture$nJZZj3C.o5vFWgDGA0iKfaH1Nkh.X7YmBW/XxbdKjqMJFQlqoK68wFo4OjGZu1AE8epNkeV4h/27kwps1UGE..'
+  no_log: true
+
+- name: DOVECOT | Supply a dedicated unprivileged Winbind PAM service for the fixture
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/pam.d/dovecot-test-winbind
+    content: |
+      auth required pam_winbind.so
+      account required pam_winbind.so
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: DOVECOT | Complete the container boot transition before PAM login tests
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: systemd-user-sessions.service
+    state: started

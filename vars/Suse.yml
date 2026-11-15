@@ -8,3 +8,8 @@ __dovecot_imap_packages: []
 __dovecot_sieve_packages: []
 __dovecot_validate_config: /usr/bin/doveconf -c %s -n
 __dovecot_nologin: /usr/sbin/nologin
+__dovecot_gssapi_packages: []
+__dovecot_ldap_packages: []
+__dovecot_sql_packages:
+  mysql: ['dovecot24-backend-mysql']
+  pgsql: ['dovecot24-backend-pgsql']

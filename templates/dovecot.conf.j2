@@ -7,30 +7,168 @@ auth_allow_cleartext = no
 auth_username_format = %{user | lower}
 mail_driver = {{ dovecot_mail_format }}
 mail_path = ~/mail
+mail_home = {{ dovecot_mail_root }}/%{user}
+{% if dovecot_mail_format == 'mbox' %}
+mail_inbox_path = ~/inbox
+{% endif %}
 passdb passwd-file {
+  username_filter = {{ dovecot_users | selectattr('password_hash', 'equalto', '*') | map(attribute='name') | map('regex_replace', '^', '!') | join(' ') }}
   passwd_file_path = /etc/dovecot/users
+  result_internalfail = return-fail
 }
 userdb passwd-file {
   passwd_file_path = /etc/dovecot/users
+  result_internalfail = return-fail
 }
 {% else %}
 disable_plaintext_auth = yes
 auth_username_format = %Lu
+mail_home = {{ dovecot_mail_root }}/%u
 mail_location = {{ dovecot_mail_format }}:~/mail{{ ':INBOX=~/inbox' if dovecot_mail_format == 'mbox' else '' }}
 passdb {
   driver = passwd-file
+  username_filter = {{ dovecot_users | selectattr('password_hash', 'equalto', '*') | map(attribute='name') | map('regex_replace', '^', '!') | join(' ') }}
   args = /etc/dovecot/users
+  result_internalfail = return-fail
 }
 userdb {
   driver = passwd-file
   args = /etc/dovecot/users
+  result_internalfail = return-fail
 }
 {% endif %}
+{% if dovecot_sql_enabled %}
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+!include /etc/dovecot/sql.conf.ext
+{% else %}
+{% if dovecot_sql.password_query | length > 0 %}
+passdb {
+  driver = sql
+  args = /etc/dovecot/sql.conf.ext
+  result_internalfail = return-fail
+}
+{% if dovecot_pam_enabled %}
+passdb {
+  driver = sql
+  args = /etc/dovecot/sql.conf.ext
+  mechanisms = plain login
+  deny = yes
+  result_internalfail = return-fail
+}
+{% endif %}
+{% endif %}
+{% if dovecot_sql.user_query | length > 0 %}
+userdb {
+  driver = sql
+  args = /etc/dovecot/sql.conf.ext
+  result_internalfail = return-fail
+}
+{% endif %}
+{% endif %}
+{% endif %}
+{% if dovecot_ldap_enabled %}
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+!include /etc/dovecot/ldap.conf.ext
+{% else %}
+userdb {
+  driver = ldap
+  args = /etc/dovecot/ldap.conf.ext
+  result_internalfail = return-fail
+}
+{% endif %}
+{% endif %}
+{% if dovecot_sasl_users | length > 0 %}
+protocol smtp {
+  passdb{{ ' sasl-users' if __dovecot_version.stdout is version('2.4', '>=') else '' }} {
+    driver = passwd-file
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+    passwd_file_path = /etc/dovecot/sasl-users
+    mechanisms_filter = plain login
+{% else %}
+    args = /etc/dovecot/sasl-users
+    mechanisms = plain login
+{% endif %}
+    username_filter = {{ dovecot_sasl_users | map(attribute='name') | join(' ') }}
+    result_failure = return-fail
+    result_internalfail = return-fail
+  }
+}
+{% endif %}
+{% if dovecot_pam_enabled %}
+{% set __dovecot_legacy_pam_mapping = __dovecot_version.stdout is version('2.4', '<') and dovecot_pam_username_format == 'localpart' %}
+{% macro __dovecot_pam_filter() -%}
+{{ dovecot_pam_username_filter | join(' ') }}{% for __dovecot_account in dovecot_users if __dovecot_account.password_hash != '*' %} !{{ __dovecot_account.name }}{% endfor %}{% for __dovecot_account in dovecot_sasl_users %} !{{ __dovecot_account.name }}{% endfor %}
+{%- endmacro %}
+{% if dovecot_pam_username_format == 'localpart' %}
+# A qualified login is required before domain-restricted local-part mapping.
+passdb{{ ' pam-qualified' if __dovecot_version.stdout is version('2.4', '>=') else '' }} {
+  driver = static
+  deny = yes
+  username_filter = !*@*
+  {{ 'mechanisms_filter' if __dovecot_version.stdout is version('2.4', '>=') else 'mechanisms' }} = plain login
+}
+{% endif %}
+{% if __dovecot_legacy_pam_mapping %}
+# 2.3 workers ignore default_fields; this lookup changes no authentication state.
+passdb {
+  driver = static
+  args = noauthenticate user=%n
+  username_filter = {{ __dovecot_pam_filter() }}
+  mechanisms = plain login
+  result_internalfail = return-fail
+}
+{% endif %}
+passdb{{ ' pam' if __dovecot_version.stdout is version('2.4', '>=') else '' }} {
+  driver = pam
+  username_filter = {{ '!*@*' if __dovecot_legacy_pam_mapping else __dovecot_pam_filter() }}
+
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+  mechanisms_filter = plain login
+  service_name = {{ dovecot_pam_service }}
+{% if dovecot_pam_username_format == 'localpart' %}
+  fields {
+    user = %{user | username}
+  }
+{% endif %}
+{% else %}
+  mechanisms = plain login
+  args = {{ dovecot_pam_service }}
+{% endif %}
+  result_success = continue-ok
+  result_failure = return-fail
+  result_internalfail = return-fail
+}
+# PAM modules may rewrite PAM_USER; retain the complete mail login identity.
+passdb{{ ' pam-identity' if __dovecot_version.stdout is version('2.4', '>=') else '' }} {
+  driver = static
+  skip = unauthenticated
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+  mechanisms_filter = plain login
+  fields {
+    user = %{original_user | lower}
+  }
+{% else %}
+  mechanisms = plain login
+  override_fields = user=%L{original_user}
+{% endif %}
+}
+{% endif %}
+{% if dovecot_auth_worker_user | length > 0 %}
+service auth-worker {
+  user = {{ dovecot_auth_worker_user | to_json }}
+}
+{% endif %}
+{% if dovecot_gssapi_enabled %}
+auth_krb5_keytab = {{ dovecot_krb5_keytab | to_json }}
+auth_gssapi_hostname = {{ dovecot_gssapi_hostname | to_json }}
+{% endif %}
+mail_uid = {{ dovecot_mail_uid }}
+mail_gid = {{ dovecot_mail_gid }}
 hostname = {{ dovecot_hostname | to_json }}
 postmaster_address = {{ dovecot_postmaster_address | to_json }}
 protocols = lmtp{{ ' imap' if dovecot_imap_enabled else '' }}{{ ' sieve' if dovecot_managesieve_enabled else '' }}
 listen = {{ dovecot_listen | join(', ') | to_json }}
-auth_mechanisms = plain login
+auth_mechanisms = plain login{{ ' gssapi' if dovecot_gssapi_enabled else '' }}
 first_valid_uid = {{ dovecot_mail_uid }}
 last_valid_uid = {{ dovecot_mail_uid }}
 first_valid_gid = {{ dovecot_mail_gid }}

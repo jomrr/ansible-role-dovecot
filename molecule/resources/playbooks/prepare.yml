@@ -2,11 +2,11 @@
 # role: dovecot
 # file: molecule/resources/playbooks/prepare.yml
 
-
-- name: DOVECOT | Prepare delivery and TLS fixtures
+- name: DOVECOT | Prepare TLS and package metadata
   hosts: all
   gather_facts: true
   tasks:
+
     - name: DOVECOT | Refresh APT package metadata
       become: true
       become_user: root
@@ -29,12 +29,23 @@
         runrefresh: true
       when: ansible_facts.pkg_mgr == 'zypper'
 
-    - name: DOVECOT | Install Postfix and certificate fixture tools
+    - name: DOVECOT | Install certificate fixture tools
       become: true
       become_user: root
       ansible.builtin.package:
-        name: [postfix, python3-cryptography]
+        name:
+          - python3-cryptography
         state: present
+
+    - name: DOVECOT | Install mail protocol and Kerberos clients
+      become: true
+      become_user: root
+      ansible.builtin.package:
+        name:
+          - postfix
+          - python3-gssapi
+        state: present
+      when: inventory_hostname in groups['dovecot_servers']
 
     - name: DOVECOT | Create the Postfix socket directory fixture
       become: true
@@ -45,6 +56,7 @@
         owner: postfix
         group: root
         mode: '0700'
+      when: inventory_hostname in groups['dovecot_servers']
 
     - name: DOVECOT | Create the certificate fixture directory
       become: true
@@ -69,8 +81,11 @@
       community.crypto.openssl_csr:
         path: /etc/dovecot-test/server.csr
         privatekey_path: /etc/dovecot-test/server.key
-        common_name: localhost
-        subject_alt_name: ['DNS:localhost', 'IP:127.0.0.1']
+        common_name: '{{ inventory_hostname }}.mail.test'
+        subject_alt_name:
+          - DNS:localhost
+          - IP:127.0.0.1
+          - DNS:{{ inventory_hostname }}.mail.test
         mode: '0644'
 
     - name: DOVECOT | Sign the fixture certificate
@@ -82,3 +97,31 @@
         privatekey_path: /etc/dovecot-test/server.key
         provider: selfsigned
         mode: '0644'
+
+- name: DOVECOT | Prepare a real directory and SQL services
+  hosts: dovecot_dc
+  gather_facts: true
+  module_defaults:
+    group/jomrr.samba.all:
+      server: dc-dovecot.mail.test
+      realm: MAIL.TEST
+      bind_username: Administrator
+      bind_password: "{{ __dovecot_ad_admin_password }}"
+  tasks:
+
+    - name: DOVECOT | Prepare the domain controller fixture
+      ansible.builtin.import_tasks: ../tasks/domain.yml
+
+    - name: DOVECOT | Prepare PostfixAdmin database fixtures
+      ansible.builtin.import_tasks: ../tasks/database.yml
+
+- name: DOVECOT | Prepare externally managed member services
+  hosts: dovecot_servers
+  gather_facts: true
+  tasks:
+
+    - name: DOVECOT | Prepare membership and service credentials
+      ansible.builtin.import_tasks: ../tasks/member.yml
+
+    - name: DOVECOT | Prepare the Postfix submission authorization fixture
+      ansible.builtin.import_tasks: ../tasks/postfix.yml

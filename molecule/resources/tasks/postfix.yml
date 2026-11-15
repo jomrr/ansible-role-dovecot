@@ -1,0 +1,83 @@
+---
+# role: dovecot
+# file: molecule/resources/tasks/postfix.yml
+
+- name: DOVECOT | Configure the real Postfix submission fixture
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/postfix/main.cf
+    content: |
+      compatibility_level = 3.6
+      myhostname = {{ inventory_hostname }}.mail.test
+      setgid_group = {{ 'maildrop' if ansible_facts.os_family == 'Suse' else 'postdrop' }}
+      mydestination =
+      inet_interfaces = loopback-only
+      inet_protocols = ipv4
+      smtpd_sasl_type = dovecot
+      smtpd_sasl_path = private/auth
+      smtpd_sasl_auth_enable = yes
+      smtpd_tls_auth_only = yes
+      smtpd_tls_security_level = encrypt
+      smtpd_tls_cert_file = /etc/dovecot-test/server.pem
+      smtpd_tls_key_file = /etc/dovecot-test/server.key
+      smtpd_relay_restrictions = check_sasl_access texthash:/etc/postfix/submission-access, reject
+      smtpd_sender_restrictions = reject_authenticated_sender_login_mismatch
+      smtpd_sender_login_maps = texthash:/etc/postfix/sender-logins
+      virtual_mailbox_domains = example.test, mail.test
+      virtual_mailbox_maps = texthash:/etc/postfix/mailboxes
+      virtual_transport = lmtp:unix:private/dovecot-lmtp
+    mode: '0644'
+
+- name: DOVECOT | Define fixture submission entitlement independently of authentication
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/postfix/submission-access
+    content: |
+      ad@mail.test OK
+      adsql@mail.test OK
+      local@mail.test OK
+      sender@mail.test OK
+      maildir@example.test OK
+    mode: '0644'
+
+- name: DOVECOT | Define fixture envelope sender ownership
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/postfix/sender-logins
+    content: |
+      ad@mail.test ad@mail.test
+      adsql@mail.test adsql@mail.test
+      outsider@mail.test outsider@mail.test
+      local@mail.test local@mail.test
+      sender@mail.test sender@mail.test
+      maildir@example.test maildir@example.test
+    mode: '0644'
+
+- name: DOVECOT | Define fixture recipients without a submission-only mailbox
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/postfix/mailboxes
+    content: |
+      ad@mail.test 1
+      adsql@mail.test 1
+      local@mail.test 1
+      maildir@example.test 1
+    mode: '0644'
+
+- name: DOVECOT | Enable the SMTP submission listener
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: [postconf, -M, 'submission/inet=submission inet n - n - - smtpd']
+  changed_when: true
+
+- name: DOVECOT | Start the submission fixture
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: postfix
+    state: restarted

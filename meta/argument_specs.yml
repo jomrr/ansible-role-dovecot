@@ -46,7 +46,7 @@ argument_specs:
         default: 5000
       dovecot_users:
         type: list
-        description: Authoritative virtual accounts; removing an account preserves its stored
+        description: File-backed virtual accounts; removing an account preserves its stored
           mail.
         default: []
         elements: dict
@@ -59,8 +59,8 @@ argument_specs:
             type: str
             required: true
             no_log: true
-            description: Dovecot SHA512-CRYPT, BLF-CRYPT or ARGON2ID hash; * disables password
-              login.
+            description: Dovecot SHA512-CRYPT, BLF-CRYPT or ARGON2ID hash; * disables the
+              file password.
           mail_format:
             type: str
             choices:
@@ -136,3 +136,191 @@ argument_specs:
         type: bool
         description: Back up the managed main configuration before replacement.
         default: false
+      dovecot_sasl_users:
+        type: list
+        elements: dict
+        default: []
+        description: SMTP authentication accounts without mailbox records; names must be
+          disjoint from mailbox identities.
+        options:
+          name:
+            type: str
+            required: true
+            description: Unique lowercase full login address.
+          password_hash:
+            type: str
+            required: true
+            no_log: true
+            description: Dovecot SHA512-CRYPT, BLF-CRYPT or ARGON2ID hash; disabled passwords
+              are not accepted.
+      dovecot_pam_enabled:
+        type: bool
+        default: false
+        description: Enable additional password verification and account checks through
+          an externally managed PAM service.
+      dovecot_pam_service:
+        type: str
+        default: dovecot
+        description: Existing PAM service name; the role does not configure PAM or join
+          an AD domain.
+      dovecot_pam_username_format:
+        type: str
+        choices:
+          - full
+          - localpart
+        default: full
+        description: Identity passed to PAM; the complete original login is restored after
+          successful authentication.
+      dovecot_pam_username_filter:
+        type: list
+        elements: str
+        default: []
+        description: Native Dovecot username patterns selecting PAM users; file password
+          and submission-only accounts are excluded.
+      dovecot_auth_worker_user:
+        type: str
+        default: ''
+        description: Existing auth-worker account; empty preserves the native root default
+          needed by pam_unix.
+      dovecot_gssapi_enabled:
+        type: bool
+        default: false
+        description: Enable Kerberos GSSAPI with an externally provisioned service keytab.
+      dovecot_krb5_keytab:
+        type: str
+        default: /etc/dovecot/dovecot.keytab
+        description: Existing dedicated keytab readable by the Dovecot auth process; creation
+          and distribution are external.
+      dovecot_gssapi_hostname:
+        type: str
+        default: '{{ dovecot_hostname }}'
+        description: Exact hostname registered in the IMAP and SMTP service principals.
+      dovecot_sql_enabled:
+        type: bool
+        default: false
+        description: Enable independently configured SQL password and mailbox queries alongside
+          file and LDAP sources.
+      dovecot_sql:
+        type: dict
+        description: TLS-verified SQL connection and native queries; no schema changes are
+          performed.
+        options:
+          driver:
+            type: str
+            required: true
+            choices:
+              - mysql
+              - pgsql
+            description: MySQL or MariaDB, or PostgreSQL driver.
+          host:
+            type: str
+            required: true
+            description: Database DNS hostname matching its TLS certificate.
+          port:
+            type: int
+            required: true
+            description: TCP port of the database server.
+          database:
+            type: str
+            required: true
+            description: Existing database name.
+          username:
+            type: str
+            required: true
+            description: Read-only database account.
+          password:
+            type: str
+            required: true
+            no_log: true
+            description: Database account password, supplied from a secret store.
+          ca_file:
+            type: str
+            required: true
+            description: Existing trusted CA file used to verify the SQL server certificate.
+          password_query:
+            type: str
+            required: true
+            description: Native SQL returning user and password; empty disables SQL password
+              authentication.
+          user_query:
+            type: str
+            required: true
+            description: Native SQL returning eligible mailbox records; empty disables SQL
+              userdb.
+          iterate_query:
+            type: str
+            required: true
+            description: Native SQL returning eligible usernames for doveadm iteration;
+              empty disables iteration.
+        default:
+          driver: mysql
+          host: localhost
+          port: 3306
+          database: postfixadmin
+          username: dovecot
+          password: ''
+          ca_file: ''
+          password_query: ''
+          user_query: ''
+          iterate_query: ''
+      dovecot_ldap_enabled:
+        type: bool
+        default: false
+        description: Enable LDAP mailbox lookup without LDAP password authentication.
+      dovecot_ldap:
+        type: dict
+        description: TLS-verified directory connection and mailbox selection; account and
+          schema management remain external.
+        options:
+          uris:
+            type: list
+            elements: str
+            required: true
+            description: LDAPS endpoints; server names must match their certificates.
+          bind_dn:
+            type: str
+            required: true
+            description: Read-only directory bind identity.
+          bind_password:
+            type: str
+            required: true
+            no_log: true
+            description: Directory bind password, supplied from a secret store.
+          base:
+            type: str
+            required: true
+            description: LDAP search base DN.
+          ca_file:
+            type: str
+            required: true
+            description: Existing trusted CA file used to verify LDAP server certificates.
+          user_filter:
+            type: str
+            required: true
+            description: Native LDAP filter selecting an enabled, mail-entitled account
+              for the full login identity.
+          user_fields:
+            type: dict
+            required: true
+            description: Dovecot userdb fields mapped to native LDAP expressions, such as
+              user to '%{ldap:mail}'.
+          iterate_filter:
+            type: str
+            required: true
+            description: LDAP filter enumerating eligible mailboxes for doveadm; empty disables
+              iteration.
+          iterate_user:
+            type: str
+            required: true
+            description: Native LDAP expression returning each canonical mailbox identity
+              during iteration.
+        default:
+          uris: []
+          bind_dn: ''
+          bind_password: ''
+          base: ''
+          ca_file: ''
+          user_filter: ''
+          user_fields: {}
+          iterate_filter: ''
+          iterate_user: '%{ldap:mail}'

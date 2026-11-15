@@ -20,6 +20,10 @@
       - not dovecot_managesieve_enabled or dovecot_sieve_enabled
       - dovecot_sieve_enabled or dovecot_sieve_before | length == 0
       - dovecot_users | map(attribute='name') | unique | length == dovecot_users | length
+      - dovecot_sasl_users | map(attribute='name') | unique | length == dovecot_sasl_users | length
+      - dovecot_users | map(attribute='name') | intersect(dovecot_sasl_users | map(attribute='name')) | length == 0
+      - dovecot_pam_service is match('^[a-z0-9_-]+$')
+      - dovecot_auth_worker_user is match('^([a-z_][a-z0-9_-]*[$]?)?$')
     quiet: true
     fail_msg: Check delivery addresses, unique accounts, storage IDs, absolute paths and Sieve dependencies.
 
@@ -38,7 +42,7 @@
       - __dovecot_name is match('^[a-z0-9][a-z0-9._+-]*@[a-z0-9][a-z0-9.-]*[a-z0-9]$')
     quiet: true
     fail_msg: Mailbox names must be lowercase addresses without path separators or whitespace.
-  loop: "{{ dovecot_users | map(attribute='name') }}"
+  loop: "{{ (dovecot_users + dovecot_sasl_users) | map(attribute='name') }}"
   loop_control:
     loop_var: __dovecot_name
     label: "{{ __dovecot_name }}"
@@ -50,8 +54,82 @@
         __dovecot_hash == '*' or
         __dovecot_hash is match('^\{(SHA512-CRYPT|BLF-CRYPT|ARGON2ID)\}[^\s:]+$')
     quiet: true
-    fail_msg: Use a supported Dovecot password hash or * for a delivery-only account.
+    fail_msg: Use a supported Dovecot password hash or * to disable the file password.
   loop: "{{ dovecot_users | map(attribute='password_hash') }}"
   loop_control:
     loop_var: __dovecot_hash
   no_log: true
+
+- name: DOVECOT | Require password hashes for submission-only identities
+  ansible.builtin.assert:
+    that:
+      - __dovecot_hash is match('^\{(SHA512-CRYPT|BLF-CRYPT|ARGON2ID)\}[^\s:]+$')
+    quiet: true
+    fail_msg: Submission-only accounts require a supported Dovecot password hash.
+  loop: "{{ dovecot_sasl_users | map(attribute='password_hash') }}"
+  loop_control:
+    loop_var: __dovecot_hash
+  no_log: true
+
+- name: DOVECOT | Validate PAM identity patterns
+  ansible.builtin.assert:
+    that:
+      - __dovecot_pattern is match('^!?[a-z0-9*?._+@-]+$')
+    quiet: true
+  loop: "{{ dovecot_pam_username_filter }}"
+  loop_control:
+    loop_var: __dovecot_pattern
+    label: "{{ __dovecot_pattern }}"
+
+- name: DOVECOT | Validate the external Kerberos service identity
+  ansible.builtin.assert:
+    that:
+      - dovecot_krb5_keytab is match('^/[^\s"{}]+$')
+      - dovecot_gssapi_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
+    quiet: true
+  when: dovecot_gssapi_enabled
+
+- name: DOVECOT | Require a TLS-verified SQL connection and explicit lookup queries
+  ansible.builtin.assert:
+    that:
+      - dovecot_sql.host is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
+      - dovecot_sql.port > 0 and dovecot_sql.port < 65536
+      - dovecot_sql.database is match('^[a-zA-Z0-9_-]+$')
+      - dovecot_sql.username is match('^[a-zA-Z0-9_.@-]+$')
+      - dovecot_sql.ca_file is match('^/[^\s\x27"{}]+$')
+      - dovecot_sql.password_query | length > 0 or dovecot_sql.user_query | length > 0
+      - dovecot_sql.password_query is not search('[\r\n]')
+      - dovecot_sql.user_query is not search('[\r\n]')
+      - dovecot_sql.iterate_query is not search('[\r\n]')
+    quiet: true
+  when: dovecot_sql_enabled
+
+- name: DOVECOT | Validate SQL credential serialization
+  ansible.builtin.assert:
+    that:
+      - dovecot_sql.password | length > 0
+      - dovecot_sql.password is not search('[\r\n]')
+    quiet: true
+  when: dovecot_sql_enabled
+  no_log: true
+
+- name: DOVECOT | Require explicit directory mailbox eligibility and trusted TLS
+  ansible.builtin.assert:
+    that:
+      - dovecot_ldap.uris | length > 0
+      - dovecot_ldap.user_filter | length > 0
+      - dovecot_ldap.base | length > 0
+      - dovecot_ldap.ca_file is match('^/[^\s"{}]+$')
+    quiet: true
+  when: dovecot_ldap_enabled
+
+- name: DOVECOT | Require LDAPS directory endpoints
+  ansible.builtin.assert:
+    that:
+      - __dovecot_uri is match('^ldaps://[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/?$')
+    quiet: true
+  loop: "{{ dovecot_ldap.uris }}"
+  loop_control:
+    loop_var: __dovecot_uri
+    label: "{{ __dovecot_uri }}"
+  when: dovecot_ldap_enabled

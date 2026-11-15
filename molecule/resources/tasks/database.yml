@@ -1,0 +1,149 @@
+---
+# role: dovecot
+# file: molecule/resources/tasks/database.yml
+
+- name: DOVECOT | Install real PostfixAdmin database fixture engines
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: [mariadb-server, postgresql, python3-pymysql, python3-psycopg2]
+    state: present
+
+- name: DOVECOT | Install database TLS credentials
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    src: "/etc/dovecot-test/server.{{ __dovecot_database_key.1 }}"
+    dest: "/etc/dovecot-test/{{ __dovecot_database_key.0 }}.{{ __dovecot_database_key.1 }}"
+    remote_src: true
+    owner: "{{ __dovecot_database_key.0 }}"
+    mode: '0600'
+  loop: "{{ ['mysql', 'postgres'] | product(['pem', 'key']) | list }}"
+  loop_control:
+    loop_var: __dovecot_database_key
+    label: "{{ __dovecot_database_key | join('.') }}"
+
+- name: DOVECOT | Configure MariaDB fixture TLS
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/mysql/mariadb.conf.d/99-dovecot-test.cnf
+    content: |
+      [mysqld]
+      bind-address = 0.0.0.0
+      ssl-cert = /etc/dovecot-test/mysql.pem
+      ssl-key = /etc/dovecot-test/mysql.key
+      ssl-ca = /etc/dovecot-test/server.pem
+      require_secure_transport = ON
+    mode: '0644'
+
+- name: DOVECOT | Start the MariaDB fixture with verified transport
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: mariadb
+    state: restarted
+
+- name: DOVECOT | Start the PostgreSQL fixture
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: postgresql
+    state: started
+
+- name: DOVECOT | Configure PostgreSQL fixture TLS and listener
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_alter_system:
+    param: "{{ __dovecot_pg_setting.key }}"
+    value: "{{ __dovecot_pg_setting.value }}"
+  loop:
+    - {key: listen_addresses, value: '*'}
+    - {key: ssl, value: 'on'}
+    - {key: ssl_cert_file, value: /etc/dovecot-test/postgres.pem}
+    - {key: ssl_key_file, value: /etc/dovecot-test/postgres.key}
+  loop_control:
+    loop_var: __dovecot_pg_setting
+    label: "{{ __dovecot_pg_setting.key }}"
+
+- name: DOVECOT | Locate PostgreSQL fixture client authentication configuration
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    query: SHOW hba_file
+  register: __dovecot_pg_hba
+
+- name: DOVECOT | Permit TLS-only database fixture clients
+  become: true
+  become_user: root
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ __dovecot_pg_hba.query_result[0].hba_file }}"
+    contype: hostssl
+    databases: postfixadmin
+    users: dovecot
+    source: 0.0.0.0/0
+    method: scram-sha-256
+
+- name: DOVECOT | Restart the PostgreSQL fixture with TLS enabled
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: postgresql
+    state: restarted
+
+- name: DOVECOT | Create the MariaDB PostfixAdmin fixture database
+  become: true
+  become_user: root
+  ansible.mysql.mysql_db:
+    name: postfixadmin
+    login_unix_socket: /run/mysqld/mysqld.sock
+
+- name: DOVECOT | Seed MariaDB with PostfixAdmin mailbox columns
+  become: true
+  become_user: root
+  ansible.mysql.mysql_query:
+    login_unix_socket: /run/mysqld/mysqld.sock
+    login_db: postfixadmin
+    query: "{{ lookup('ansible.builtin.file', '../tests/postfixadmin.sql').split(';') | reject('match', '^\\s*$') | list }}"
+
+- name: DOVECOT | Create the restricted MariaDB lookup account
+  become: true
+  become_user: root
+  ansible.mysql.mysql_user:
+    login_unix_socket: /run/mysqld/mysqld.sock
+    name: dovecot
+    host: '%'
+    password: molecule-database-secret
+    priv: 'postfixadmin.*:SELECT'
+    tls_requires: {SSL: true}
+  no_log: true
+
+- name: DOVECOT | Create the PostgreSQL PostfixAdmin fixture database
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: postfixadmin
+
+- name: DOVECOT | Seed PostgreSQL with PostfixAdmin mailbox columns
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    login_db: postfixadmin
+    query: "{{ lookup('ansible.builtin.file', '../tests/postfixadmin.sql') }}"
+
+- name: DOVECOT | Create the restricted PostgreSQL lookup account
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: dovecot
+    password: molecule-database-secret
+  no_log: true
+
+- name: DOVECOT | Grant PostgreSQL mailbox lookup privileges
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_privs:
+    login_db: postfixadmin
+    roles: dovecot
+    objs: mailbox
+    privs: SELECT

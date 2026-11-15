@@ -20,6 +20,15 @@
     mode: '0640'
   listen: compile sieve
 
+- name: DOVECOT | Validate the complete configuration before stopping the running service
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    cmd: "{{ __dovecot_validate_config | replace('%s', '/etc/dovecot/dovecot.conf') }}"
+  changed_when: false
+  no_log: true
+  listen: restart dovecot
+
 - name: DOVECOT | Restart delivery with validated configuration
   become: true
   become_user: root

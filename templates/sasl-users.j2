@@ -1,0 +1,5 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+{% for __dovecot_account in dovecot_sasl_users %}
+{{ __dovecot_account.name }}:{{ __dovecot_account.password_hash }}
+{% endfor %}

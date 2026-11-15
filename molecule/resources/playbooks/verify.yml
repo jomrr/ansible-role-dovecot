@@ -2,11 +2,11 @@
 # role: dovecot
 # file: molecule/resources/playbooks/verify.yml
 
-
 - name: DOVECOT | Verify delivery and secure client access
-  hosts: all
+  hosts: dovecot_servers
   gather_facts: true
   tasks:
+
     - name: DOVECOT | Exercise storage formats, Sieve, authentication and TLS policy
       become: true
       become_user: root
@@ -15,15 +15,93 @@
         executable: python3
       changed_when: false
 
+    - name: DOVECOT | Exercise PostgreSQL and local-part PAM identities
+      ansible.builtin.include_role:
+        name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
+      vars:
+        dovecot_sql: '{{ hostvars[inventory_hostname].dovecot_sql | combine({''driver'': ''pgsql'', ''port'': 5432}) }}'
+        dovecot_pam_username_format: localpart
+        dovecot_pam_service: dovecot
+        dovecot_auth_worker_user: ''
+
+    - name: DOVECOT | Verify the alternate SQL driver and PAM identity mapping
+      become: true
+      become_user: root
+      ansible.builtin.script:
+        cmd: ../tests/verify_delivery.py --sql
+        executable: python3
+      changed_when: false
+
+    - name: DOVECOT | Acquire a ticket before the directory outage
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - kinit
+          - ad@MAIL.TEST
+        stdin: '{{ __dovecot_ad_user_password }}'
+      environment:
+        KRB5CCNAME: FILE:/tmp/dovecot-test.ccache
+      changed_when: true
+      no_log: true
+
+    - name: DOVECOT | Cache the IMAP service ticket before the outage
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv:
+          - kvno
+          - imap/{{ inventory_hostname }}.mail.test
+      environment:
+        KRB5CCNAME: FILE:/tmp/dovecot-test.ccache
+      changed_when: true
+
+- name: DOVECOT | Introduce an external identity service outage
+  hosts: dovecot_dc
+  gather_facts: false
+  tasks:
+
+    - name: DOVECOT | Stop the directory and database fixture services
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: '{{ __dovecot_service }}'
+        state: stopped
+      loop:
+        - samba-ad-dc
+        - mariadb
+        - postgresql
+      loop_control:
+        loop_var: __dovecot_service
+        label: '{{ __dovecot_service }}'
+
+- name: DOVECOT | Verify outage handling and feature removal
+  hosts: dovecot_servers
+  gather_facts: false
+  tasks:
+
+    - name: DOVECOT | Verify outage isolation and rejection of uncertain identity lookups
+      become: true
+      become_user: root
+      ansible.builtin.script:
+        cmd: ../tests/verify_delivery.py --outage
+        executable: python3
+      changed_when: false
+
     - name: DOVECOT | Exercise the delivery-only configuration
       ansible.builtin.include_role:
-        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
       vars:
         dovecot_imap_enabled: false
         dovecot_managesieve_enabled: false
         dovecot_postfix_auth_enabled: false
         dovecot_sieve_enabled: false
         dovecot_sieve_before: ''
+        dovecot_sasl_users: []
+        dovecot_pam_enabled: false
+        dovecot_gssapi_enabled: false
+        dovecot_sql_enabled: false
+        dovecot_ldap_enabled: false
         dovecot_users:
           - name: delivery@example.test
             password_hash: '*'

@@ -1,0 +1,70 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+{% if dovecot_sql.driver == 'mysql' %}
+mysql {{ dovecot_sql.host }} {
+  port = {{ dovecot_sql.port }}
+  dbname = {{ dovecot_sql.database | to_json(ensure_ascii=False) }}
+  user = {{ dovecot_sql.username | to_json(ensure_ascii=False) }}
+  password = {{ dovecot_sql.password | to_json(ensure_ascii=False) }}
+  ssl = yes
+  ssl_cipher_list = HIGH
+  ssl_client_ca_file = {{ dovecot_sql.ca_file | to_json(ensure_ascii=False) }}
+  ssl_client_require_valid_cert = yes
+}
+{% else %}
+pgsql {{ dovecot_sql.host }} {
+  parameters {
+    connect_timeout = 5
+    port = {{ dovecot_sql.port }}
+    dbname = {{ dovecot_sql.database | to_json(ensure_ascii=False) }}
+    user = {{ dovecot_sql.username | to_json(ensure_ascii=False) }}
+    password = {{ dovecot_sql.password | to_json(ensure_ascii=False) }}
+    sslmode = verify-full
+    sslrootcert = {{ dovecot_sql.ca_file | to_json(ensure_ascii=False) }}
+  }
+}
+{% endif %}
+{% if dovecot_sql.password_query | length > 0 %}
+passdb sql {
+  sql_driver = {{ dovecot_sql.driver }}
+  query = {{ dovecot_sql.password_query | to_json(ensure_ascii=False) }}
+  default_password_scheme = SHA512-CRYPT
+  result_internalfail = return-fail
+}
+{% if dovecot_pam_enabled %}
+# A known SQL password must not fall through to an unrelated PAM credential.
+passdb sql-local-only {
+  driver = sql
+  sql_driver = {{ dovecot_sql.driver }}
+  sql_query = {{ dovecot_sql.password_query | to_json(ensure_ascii=False) }}
+  mechanisms_filter = plain login
+  deny = yes
+  result_internalfail = return-fail
+}
+{% endif %}
+{% endif %}
+{% if dovecot_sql.user_query | length > 0 %}
+userdb sql {
+  sql_driver = {{ dovecot_sql.driver }}
+  query = {{ dovecot_sql.user_query | to_json(ensure_ascii=False) }}
+{% if dovecot_sql.iterate_query | length > 0 %}
+  iterate_query = {{ dovecot_sql.iterate_query | to_json(ensure_ascii=False) }}
+{% endif %}
+  result_internalfail = return-fail
+}
+{% endif %}
+{% else %}
+driver = {{ dovecot_sql.driver }}
+{% if dovecot_sql.driver == 'mysql' %}
+{% set __dovecot_connection = 'host=' ~ dovecot_sql.host ~ ' port=' ~ dovecot_sql.port ~ ' dbname=' ~ dovecot_sql.database ~ ' user=' ~ dovecot_sql.username ~ ' password=' ~ dovecot_sql.password ~ ' ssl_ca=' ~ dovecot_sql.ca_file ~ ' ssl_verify_server_cert=yes' %}
+{% else %}
+{% set __dovecot_connection = "host='" ~ dovecot_sql.host ~ "' port=" ~ dovecot_sql.port ~ " dbname='" ~ dovecot_sql.database ~ "' user='" ~ dovecot_sql.username ~ "' password='" ~ dovecot_sql.password | replace('\\', '\\\\') | replace("'", "\\'") ~ "' sslmode=verify-full sslrootcert='" ~ dovecot_sql.ca_file ~ "'" %}
+{% endif %}
+connect = {{ __dovecot_connection | to_json(ensure_ascii=False) }}
+
+default_pass_scheme = SHA512-CRYPT
+password_query = {{ dovecot_sql.password_query }}
+user_query = {{ dovecot_sql.user_query }}
+iterate_query = {{ dovecot_sql.iterate_query }}
+{% endif %}

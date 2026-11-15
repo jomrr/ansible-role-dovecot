@@ -1,0 +1,42 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+ldap_uris = {{ dovecot_ldap.uris | join(' ') | to_json(ensure_ascii=False) }}
+ldap_auth_dn = {{ dovecot_ldap.bind_dn | to_json(ensure_ascii=False) }}
+ldap_auth_dn_password = {{ dovecot_ldap.bind_password | to_json(ensure_ascii=False) }}
+ldap_base = {{ dovecot_ldap.base | to_json(ensure_ascii=False) }}
+ssl_client_ca_file = {{ dovecot_ldap.ca_file | to_json(ensure_ascii=False) }}
+ssl_client_require_valid_cert = yes
+# Older 2.4 OpenLDAP integrations initialize TLS before per-connection CA options.
+import_environment {
+  LDAPTLS_CACERT = {{ dovecot_ldap.ca_file | to_json(ensure_ascii=False) }}
+}
+userdb ldap {
+  filter = {{ dovecot_ldap.user_filter | to_json(ensure_ascii=False) }}
+  fields {
+{% for __dovecot_field, __dovecot_value in dovecot_ldap.user_fields.items() %}
+    {{ __dovecot_field }} = {{ __dovecot_value | to_json(ensure_ascii=False) }}
+{% endfor %}
+  }
+{% if dovecot_ldap.iterate_filter | length > 0 %}
+  iterate_filter = {{ dovecot_ldap.iterate_filter | to_json(ensure_ascii=False) }}
+  iterate_fields {
+    user = {{ dovecot_ldap.iterate_user | to_json(ensure_ascii=False) }}
+  }
+{% endif %}
+  result_internalfail = return-fail
+}
+{% else %}
+uris = {{ dovecot_ldap.uris | join(' ') }}
+dn = {{ dovecot_ldap.bind_dn }}
+dnpass = {{ dovecot_ldap.bind_password | to_json(ensure_ascii=False) }}
+base = {{ dovecot_ldap.base }}
+ldap_version = 3
+tls_ca_cert_file = {{ dovecot_ldap.ca_file }}
+tls_require_cert = hard
+user_filter = {{ dovecot_ldap.user_filter }}
+user_attrs = {% for __dovecot_field, __dovecot_value in dovecot_ldap.user_fields.items() %}={{ __dovecot_field }}={{ __dovecot_value }}{{ ', ' if not loop.last else '' }}{% endfor %}
+
+iterate_filter = {{ dovecot_ldap.iterate_filter }}
+iterate_attrs = =user={{ dovecot_ldap.iterate_user }}
+{% endif %}

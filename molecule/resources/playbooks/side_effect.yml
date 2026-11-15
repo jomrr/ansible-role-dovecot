@@ -4,7 +4,7 @@
 
 
 - name: DOVECOT | Introduce configuration and account drift
-  hosts: all
+  hosts: dovecot_servers
   gather_facts: false
   tasks:
     - name: DOVECOT | Change the deployed hostname

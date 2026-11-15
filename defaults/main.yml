@@ -27,8 +27,67 @@ dovecot_mail_uid: 5000
 # Numeric GID reserved for virtual mailbox storage.
 dovecot_mail_gid: 5000
 
-# Authoritative virtual accounts; removing an account preserves its stored mail.
+# File-backed virtual accounts; removing an account preserves its stored mail.
 dovecot_users: []
+
+# Password-only accounts without mailbox records, restricted to SMTP authentication.
+dovecot_sasl_users: []
+
+# Enable password authentication through an externally managed PAM service.
+dovecot_pam_enabled: false
+
+# Existing PAM service used for authentication and account checks.
+dovecot_pam_service: dovecot
+
+# Identity passed to PAM; the original full login is restored afterwards.
+# Choices: full, localpart
+dovecot_pam_username_format: full
+
+# Native username patterns selecting PAM identities; empty permits all otherwise eligible names.
+dovecot_pam_username_filter: []
+
+# Existing auth-worker account; empty preserves Dovecot's privileged default.
+dovecot_auth_worker_user: ''
+
+# Enable ticket-based authentication using an externally provisioned service keytab.
+dovecot_gssapi_enabled: false
+
+# Existing dedicated keytab readable by the Dovecot auth process.
+dovecot_krb5_keytab: /etc/dovecot/dovecot.keytab
+
+# Hostname in the IMAP and SMTP service principals.
+dovecot_gssapi_hostname: "{{ dovecot_hostname }}"
+
+# Enable SQL password and mailbox lookups alongside the file and directory sources.
+dovecot_sql_enabled: false
+
+# SQL connection and native queries; empty queries disable their respective lookup.
+dovecot_sql:
+  driver: mysql
+  host: localhost
+  port: 3306
+  database: postfixadmin
+  username: dovecot
+  password: ''
+  ca_file: ''
+  password_query: ''
+  user_query: ''
+  iterate_query: ''
+
+# Enable LDAP mailbox lookups independently of password authentication.
+dovecot_ldap_enabled: false
+
+# TLS-protected directory connection, mailbox eligibility filter and returned attributes.
+dovecot_ldap:
+  uris: []
+  bind_dn: ''
+  bind_password: ''
+  base: ''
+  ca_file: ''
+  user_filter: ''
+  user_fields: {}
+  iterate_filter: ''
+  iterate_user: '%{ldap:mail}'
 
 # Local delivery socket accessible only to the configured MTA account.
 dovecot_lmtp_socket: /var/spool/postfix/private/dovecot-lmtp

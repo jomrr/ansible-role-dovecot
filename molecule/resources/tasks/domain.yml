@@ -1,0 +1,120 @@
+---
+# role: dovecot
+# file: molecule/resources/tasks/domain.yml
+
+- name: DOVECOT | Resolve the fixture DC before its DNS service starts
+  become: true
+  become_user: root
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\s*{{ ansible_facts.default_ipv4.address | regex_escape }}\s+'
+    line: "{{ ansible_facts.default_ipv4.address }} dc-dovecot.mail.test dc-dovecot"
+    unsafe_writes: true
+
+- name: DOVECOT | Install Samba provisioning files for the rootless fixture
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: [samba-ad-dc, samba-ad-provision, python3-samba, python3-ldap]
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: DOVECOT | Keep fixture DC identities inside the rootless namespace
+  become: true
+  become_user: root
+  ansible.builtin.replace:
+    path: /usr/share/samba/setup/idmap_init.ldif
+    regexp: "{{ __dovecot_bound.regexp }}"
+    replace: "{{ __dovecot_bound.value }}"
+  loop:
+    - {regexp: '^lowerBound: .*', value: 'lowerBound: 10000'}
+    - {regexp: '^upperBound: .*', value: 'upperBound: 60000'}
+  loop_control:
+    loop_var: __dovecot_bound
+    label: "{{ __dovecot_bound.value }}"
+
+- name: DOVECOT | Provision the fixture through the domain controller role
+  ansible.builtin.include_role:
+    name: jomrr.samba_ad_dc
+  vars:
+    samba_ad_dc_realm: MAIL.TEST
+    samba_ad_dc_domain: MAIL
+    samba_ad_dc_hostname: dc-dovecot
+    samba_ad_dc_admin_password: "{{ __dovecot_ad_admin_password }}"
+    samba_ad_dc_dns_forwarders: ["{{ ansible_facts.default_ipv4.gateway }}"]
+    samba_ad_dc_tls_keyfile: /etc/dovecot-test/server.key
+    samba_ad_dc_tls_certfile: /etc/dovecot-test/server.pem
+    samba_ad_dc_tls_cafile: /etc/dovecot-test/server.pem
+
+- name: DOVECOT | Use the provisioned AD DNS resolver
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    content: "nameserver 127.0.0.1\nsearch mail.test\n"
+    mode: '0644'
+    unsafe_writes: true
+
+- name: DOVECOT | Create real AD authentication and directory lookup accounts
+  jomrr.samba.samba_user:
+    username: "{{ __dovecot_account }}"
+    password: "{{ __dovecot_ad_user_password }}"
+    email: "{{ __dovecot_account }}@mail.test"
+    enabled: "{{ __dovecot_account != 'disabled' }}"
+  loop: [ad, adsql, outsider, disabled, local, ldap-reader]
+  loop_control:
+    loop_var: __dovecot_account
+    label: "{{ __dovecot_account }}"
+  no_log: true
+
+- name: DOVECOT | Define directory-managed mailbox eligibility
+  jomrr.samba.samba_group:
+    name: MailUsers
+    members: [ad, disabled]
+
+- name: DOVECOT | Create dedicated service identities for the test mail servers
+  jomrr.samba.samba_user:
+    username: "svc-{{ __dovecot_server }}"
+    password: "{{ __dovecot_ad_user_password }}"
+  loop: "{{ groups['dovecot_servers'] }}"
+  loop_control:
+    loop_var: __dovecot_server
+    label: "{{ __dovecot_server }}"
+  no_log: true
+
+- name: DOVECOT | Register fixture mail service principals
+  community.general.ldap_attrs:
+    server_uri: ldaps://dc-dovecot.mail.test
+    bind_dn: CN=Administrator,CN=Users,DC=mail,DC=test
+    bind_pw: "{{ __dovecot_ad_admin_password }}"
+    ca_path: /etc/dovecot-test/server.pem
+    dn: "CN=svc-{{ __dovecot_server }},CN=Users,DC=mail,DC=test"
+    attributes:
+      servicePrincipalName:
+        - "imap/{{ __dovecot_server }}.mail.test"
+        - "smtp/{{ __dovecot_server }}.mail.test"
+        - "sieve/{{ __dovecot_server }}.mail.test"
+    state: exact
+  loop: "{{ groups['dovecot_servers'] }}"
+  loop_control:
+    loop_var: __dovecot_server
+    label: "{{ __dovecot_server }}"
+  no_log: true
+
+- name: DOVECOT | Export fixture service keytabs
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - samba-tool
+      - domain
+      - exportkeytab
+      - "/etc/dovecot-test/{{ __dovecot_service.0 }}.keytab"
+      - "--principal={{ __dovecot_service.1 }}/{{ __dovecot_service.0 }}.mail.test"
+  loop: "{{ groups['dovecot_servers'] | product(['imap', 'smtp', 'sieve']) | list }}"
+  loop_control:
+    loop_var: __dovecot_service
+    label: "{{ __dovecot_service | join('/') }}"
+  changed_when: true
+  no_log: true

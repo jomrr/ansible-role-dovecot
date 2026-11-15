@@ -21,7 +21,10 @@
     name: >-
       {{ __dovecot_packages
          + (dovecot_imap_enabled | ternary(__dovecot_imap_packages, []))
-         + (dovecot_sieve_enabled | ternary(__dovecot_sieve_packages, [])) }}
+         + (dovecot_sieve_enabled | ternary(__dovecot_sieve_packages, []))
+         + (dovecot_gssapi_enabled | ternary(__dovecot_gssapi_packages, []))
+         + (dovecot_sql_enabled | ternary(__dovecot_sql_packages[dovecot_sql.driver], []))
+         + (dovecot_ldap_enabled | ternary(__dovecot_ldap_packages, [])) }}
     state: present
     # Prevent package scripts from starting an unconfigured daemon.
     policy_rc_d: "{{ 101 if ansible_facts.pkg_mgr == 'apt' else omit }}"
@@ -39,6 +42,18 @@
       - __dovecot_version.stdout is match('^2\.[34]\.')
     fail_msg: Dovecot 2.3 or 2.4 is required.
     quiet: true
+
+- name: DOVECOT | Reject whitespace unsupported by the legacy MySQL connection parser
+  ansible.builtin.assert:
+    that:
+      - dovecot_sql.password is not search('\s')
+    fail_msg: Dovecot 2.3 MySQL connection passwords cannot contain whitespace.
+    quiet: true
+  when:
+    - dovecot_sql_enabled
+    - dovecot_sql.driver == 'mysql'
+    - __dovecot_version.stdout is version('2.4', '<')
+  no_log: true
 
 - name: DOVECOT | Create the mailbox group
   become: true
@@ -95,6 +110,59 @@
     group: dovecot
     mode: '0640'
   no_log: true
+  notify: restart dovecot
+
+- name: DOVECOT | Write the private SMTP authentication database
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: sasl-users.j2
+    dest: /etc/dovecot/sasl-users
+    owner: root
+    group: dovecot
+    mode: '0640'
+  no_log: true
+  notify: restart dovecot
+
+- name: DOVECOT | Configure the SQL lookup connection
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: sql.conf.ext.j2
+    dest: /etc/dovecot/sql.conf.ext
+    owner: root
+    group: dovecot
+    mode: '0640'
+  when: dovecot_sql_enabled
+  no_log: true
+  notify: restart dovecot
+
+- name: DOVECOT | Configure the directory lookup connection
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: ldap.conf.ext.j2
+    dest: /etc/dovecot/ldap.conf.ext
+    owner: root
+    group: dovecot
+    mode: '0640'
+  when: dovecot_ldap_enabled
+  no_log: true
+  notify: restart dovecot
+
+- name: DOVECOT | Remove disabled lookup credentials
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "/etc/dovecot/{{ __dovecot_backend.name }}.conf.ext"
+    state: absent
+  loop:
+    - {name: sql, enabled: "{{ dovecot_sql_enabled }}"}
+    - {name: ldap, enabled: "{{ dovecot_ldap_enabled }}"}
+  loop_control:
+    loop_var: __dovecot_backend
+    label: "{{ __dovecot_backend.name }}"
+  when: not __dovecot_backend.enabled
   notify: restart dovecot
 
 - name: DOVECOT | Configure delivery and client access

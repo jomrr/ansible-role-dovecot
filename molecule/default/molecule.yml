@@ -6,6 +6,7 @@ dependency:
   name: "galaxy"
   options:
     requirements-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
+    role-file: "${MOLECULE_PROJECT_DIRECTORY}/molecule/resources/requirements.yml"
 driver:
   name: "podman"
 provisioner:
@@ -22,7 +23,10 @@ provisioner:
     group_vars:
       all:
         ansible_podman_mount_detection: false
-        dovecot_hostname: "mail.example.test"
+        __dovecot_ad_admin_password: "Molecule-AD-Adm1n!"
+        __dovecot_ad_user_password: "Molecule-AD-Us3r!"
+      dovecot_servers:
+        dovecot_hostname: "{{ inventory_hostname }}.mail.test"
         dovecot_postmaster_address: "postmaster@example.test"
         dovecot_imap_enabled: true
         dovecot_managesieve_enabled: true
@@ -43,18 +47,62 @@ provisioner:
             mail_format: "mdbox"
           - name: "delivery@example.test"
             password_hash: "*"
+          - name: "pamlocal@mail.test"
+            password_hash: "*"
         dovecot_sieve_before: |
           require ["fileinto"];
           if header :is "X-Dovecot-Test" "spam" {
             fileinto "Junk";
             stop;
           }
+        dovecot_pam_enabled: true
+        dovecot_pam_service: "dovecot-test-winbind"
+        dovecot_pam_username_filter:
+          - "*@mail.test"
+        dovecot_auth_worker_user: "doveauth"
+        dovecot_gssapi_enabled: true
+        dovecot_krb5_keytab: "/etc/dovecot-test/service.keytab"
+        dovecot_sql_enabled: true
+        dovecot_ldap_enabled: true
+        dovecot_sasl_users:
+          - name: "sender@mail.test"
+            password_hash: "{SHA512-CRYPT}$$6$$dovecotfixture$$nJZZj3C.o5vFWgDGA0iKfaH1Nkh.X7YmBW/XxbdKjqMJFQlqoK68wFo4OjGZu1AE8epNkeV4h/27kwps1UGE.."
+        dovecot_sql:
+          driver: "mysql"
+          host: "dc-dovecot.mail.test"
+          port: 3306
+          database: "postfixadmin"
+          username: "dovecot"
+          password: "molecule-database-secret"
+          ca_file: "/etc/dovecot-test/directory-ca.pem"
+          password_query: "SELECT username AS user, password FROM mailbox WHERE username = '%{user}' AND active = TRUE AND\
+            \ password <> '*'"
+          user_query: "SELECT username AS user FROM mailbox WHERE username = '%{user}' AND active = TRUE"
+          iterate_query: "SELECT username AS user FROM mailbox WHERE active = TRUE"
+        dovecot_ldap:
+          uris:
+            - "ldaps://dc-dovecot.mail.test"
+          bind_dn: "CN=ldap-reader,CN=Users,DC=mail,DC=test"
+          bind_password: "Molecule-AD-Us3r!"
+          base: "DC=mail,DC=test"
+          ca_file: "/etc/dovecot-test/directory-ca.pem"
+          user_filter: "(&(objectClass=user)(mail=%{user})(memberOf=CN=MailUsers,CN=Users,DC=mail,DC=test)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
+          user_fields:
+            user: "%{ldap:mail}"
+          iterate_filter: "(&(objectClass=user)(memberOf=CN=MailUsers,CN=Users,DC=mail,DC=test)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
+          iterate_user: "%{ldap:mail}"
+    host_vars:
+      mail-leap:
+        dovecot_mail_format: "mbox"
   log: true
   playbooks:
     prepare: "../resources/playbooks/prepare.yml"
     converge: "../resources/playbooks/converge.yml"
     verify: "../resources/playbooks/verify.yml"
     side_effect: "../resources/playbooks/side_effect.yml"
+    cleanup: "../resources/playbooks/cleanup.yml"
+  connection_options:
+    ansible_user: "molecule"
 verifier:
   name: "ansible"
 scenario:
@@ -73,8 +121,27 @@ scenario:
     - "destroy"
   name: "default"
 platforms:
-  - name: "dovecot"
-    image: "docker.io/${uns:-jomrr}/molecule-${img:-fedora}:${tag:-latest}"
-    pre_build_image: true
+  - pre_build_image: true
     override_command: false
     systemd: "true"
+    privileged: true
+    network: "dovecot-${MOLECULE_SCENARIO_NAME}"
+    extra_opts:
+      - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
+    groups:
+      - "dovecot_servers"
+    name: "mail-dovecot"
+    hostname: "mail-dovecot"
+    image: "docker.io/jomrr/molecule-${img:-fedora}:latest"
+  - pre_build_image: true
+    override_command: false
+    systemd: "true"
+    privileged: true
+    network: "dovecot-${MOLECULE_SCENARIO_NAME}"
+    extra_opts:
+      - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
+    groups:
+      - "dovecot_dc"
+    name: "dc-dovecot"
+    hostname: "dc-dovecot"
+    image: "docker.io/jomrr/molecule-debian:latest"
