@@ -1,0 +1,18 @@
+---
+# role: dovecot
+# file: meta/main.yml
+
+galaxy_info:
+  author: Jonas Mauer
+  description: Install and configure Dovecot for secure LMTP delivery, virtual mailboxes and Sieve filtering.
+  galaxy_tags:
+    - mail
+    - dovecot
+    - lmtp
+    - sieve
+    - imap
+  issue_tracker_url: https://github.com/jomrr/ansible-role-dovecot/issues
+  license: MIT
+  min_ansible_version: "2.22"
+  namespace: jomrr
+  role_name: dovecot

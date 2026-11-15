@@ -1,0 +1,57 @@
+---
+# role: dovecot
+# file: tasks/assert.yml
+
+- name: DOVECOT | Validate delivery and storage policy
+  ansible.builtin.assert:
+    that:
+      - dovecot_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
+      - dovecot_postmaster_address is match('^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+$')
+      - dovecot_mail_uid >= 1000
+      - dovecot_mail_gid >= 1000
+      - dovecot_mail_root is match('^/[^\s:"{}]+$')
+      - "'..' not in dovecot_mail_root.split('/')"
+      - dovecot_mail_root != '/'
+      - dovecot_lmtp_socket != dovecot_auth_socket
+      - dovecot_lmtp_socket is match('^/[^\s"{}]+$')
+      - dovecot_auth_socket is match('^/[^\s"{}]+$')
+      - dovecot_listen | length > 0
+      - dovecot_sieve_max_redirects >= 0
+      - not dovecot_managesieve_enabled or dovecot_sieve_enabled
+      - dovecot_sieve_enabled or dovecot_sieve_before | length == 0
+      - dovecot_users | map(attribute='name') | unique | length == dovecot_users | length
+    quiet: true
+    fail_msg: Check delivery addresses, unique accounts, storage IDs, absolute paths and Sieve dependencies.
+
+- name: DOVECOT | Require TLS material for network access
+  ansible.builtin.assert:
+    that:
+      - dovecot_tls_certificate is match('^/[^\s"{}]+$')
+      - dovecot_tls_private_key is match('^/[^\s"{}]+$')
+    quiet: true
+    fail_msg: IMAPS and ManageSieve require existing certificate and private-key files.
+  when: dovecot_imap_enabled or dovecot_managesieve_enabled
+
+- name: DOVECOT | Validate mailbox identifiers before constructing home paths
+  ansible.builtin.assert:
+    that:
+      - __dovecot_name is match('^[a-z0-9][a-z0-9._+-]*@[a-z0-9][a-z0-9.-]*[a-z0-9]$')
+    quiet: true
+    fail_msg: Mailbox names must be lowercase addresses without path separators or whitespace.
+  loop: "{{ dovecot_users | map(attribute='name') }}"
+  loop_control:
+    loop_var: __dovecot_name
+    label: "{{ __dovecot_name }}"
+
+- name: DOVECOT | Require hashed credentials or disabled login
+  ansible.builtin.assert:
+    that:
+      - >-
+        __dovecot_hash == '*' or
+        __dovecot_hash is match('^\{(SHA512-CRYPT|BLF-CRYPT|ARGON2ID)\}[^\s:]+$')
+    quiet: true
+    fail_msg: Use a supported Dovecot password hash or * for a delivery-only account.
+  loop: "{{ dovecot_users | map(attribute='password_hash') }}"
+  loop_control:
+    loop_var: __dovecot_hash
+  no_log: true

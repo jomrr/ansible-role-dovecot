@@ -1,0 +1,84 @@
+---
+# role: dovecot
+# file: molecule/resources/playbooks/prepare.yml
+
+
+- name: DOVECOT | Prepare delivery and TLS fixtures
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: DOVECOT | Refresh APT package metadata
+      become: true
+      become_user: root
+      ansible.builtin.apt:
+        update_cache: true
+      when: ansible_facts.pkg_mgr == 'apt'
+
+    - name: DOVECOT | Refresh DNF package metadata
+      become: true
+      become_user: root
+      ansible.builtin.dnf:
+        update_cache: true
+      when: ansible_facts.pkg_mgr in ['dnf', 'dnf5']
+
+    - name: DOVECOT | Refresh Zypper package metadata
+      become: true
+      become_user: root
+      community.general.zypper_repository:
+        repo: '*'
+        runrefresh: true
+      when: ansible_facts.pkg_mgr == 'zypper'
+
+    - name: DOVECOT | Install Postfix and certificate fixture tools
+      become: true
+      become_user: root
+      ansible.builtin.package:
+        name: [postfix, python3-cryptography]
+        state: present
+
+    - name: DOVECOT | Create the Postfix socket directory fixture
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /var/spool/postfix/private
+        state: directory
+        owner: postfix
+        group: root
+        mode: '0700'
+
+    - name: DOVECOT | Create the certificate fixture directory
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: /etc/dovecot-test
+        state: directory
+        mode: '0755'
+
+    - name: DOVECOT | Generate the fixture key
+      become: true
+      become_user: root
+      community.crypto.openssl_privatekey:
+        path: /etc/dovecot-test/server.key
+        type: RSA
+        size: 2048
+        mode: '0600'
+
+    - name: DOVECOT | Generate the fixture certificate request
+      become: true
+      become_user: root
+      community.crypto.openssl_csr:
+        path: /etc/dovecot-test/server.csr
+        privatekey_path: /etc/dovecot-test/server.key
+        common_name: localhost
+        subject_alt_name: ['DNS:localhost', 'IP:127.0.0.1']
+        mode: '0644'
+
+    - name: DOVECOT | Sign the fixture certificate
+      become: true
+      become_user: root
+      community.crypto.x509_certificate:
+        path: /etc/dovecot-test/server.pem
+        csr_path: /etc/dovecot-test/server.csr
+        privatekey_path: /etc/dovecot-test/server.key
+        provider: selfsigned
+        mode: '0644'

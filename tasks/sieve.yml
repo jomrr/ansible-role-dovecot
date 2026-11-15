@@ -1,0 +1,30 @@
+---
+# role: dovecot
+# file: tasks/sieve.yml
+
+- name: DOVECOT | Validate and install the administrator Sieve script
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: sieve-before.sieve.j2
+    dest: /etc/dovecot/sieve-before.sieve
+    owner: root
+    group: "{{ dovecot_mail_group }}"
+    mode: '0640'
+    validate: /usr/bin/sievec -c /etc/dovecot/dovecot.conf %s
+  when: dovecot_sieve_before | length > 0
+  notify: compile sieve
+
+- name: DOVECOT | Remove disabled administrator filtering
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __dovecot_sieve_file }}"
+    state: absent
+  loop:
+    - /etc/dovecot/sieve-before.sieve
+    - /etc/dovecot/sieve-before.svbin
+  loop_control:
+    loop_var: __dovecot_sieve_file
+    label: "{{ __dovecot_sieve_file }}"
+  when: dovecot_sieve_before | length == 0

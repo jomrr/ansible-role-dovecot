@@ -1,0 +1,125 @@
+---
+# role: dovecot
+# file: tasks/main.yml
+
+- name: DOVECOT | Load platform settings
+  ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', __dovecot_platform_files) }}"
+  vars:
+    __dovecot_platform_files:
+      files:
+        - "{{ ansible_facts.os_family }}.yml"
+      paths:
+        - "{{ role_path }}/vars"
+
+- name: DOVECOT | Validate deployment inputs
+  ansible.builtin.import_tasks: assert.yml
+
+- name: DOVECOT | Install delivery and selected protocol packages
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: >-
+      {{ __dovecot_packages
+         + (dovecot_imap_enabled | ternary(__dovecot_imap_packages, []))
+         + (dovecot_sieve_enabled | ternary(__dovecot_sieve_packages, [])) }}
+    state: present
+    # Prevent package scripts from starting an unconfigured daemon.
+    policy_rc_d: "{{ 101 if ansible_facts.pkg_mgr == 'apt' else omit }}"
+
+- name: DOVECOT | Read the installed configuration dialect
+  ansible.builtin.command:
+    argv: [/usr/sbin/dovecot, --version]
+  register: __dovecot_version
+  changed_when: false
+  check_mode: false
+
+- name: DOVECOT | Require a supported Dovecot version
+  ansible.builtin.assert:
+    that:
+      - __dovecot_version.stdout is match('^2\.[34]\.')
+    fail_msg: Dovecot 2.3 or 2.4 is required.
+    quiet: true
+
+- name: DOVECOT | Create the mailbox group
+  become: true
+  become_user: root
+  ansible.builtin.group:
+    name: "{{ dovecot_mail_group }}"
+    gid: "{{ dovecot_mail_gid }}"
+    system: true
+
+- name: DOVECOT | Create the mailbox storage account
+  become: true
+  become_user: root
+  ansible.builtin.user:
+    name: "{{ dovecot_mail_user }}"
+    uid: "{{ dovecot_mail_uid }}"
+    group: "{{ dovecot_mail_group }}"
+    home: "{{ dovecot_mail_root }}"
+    create_home: false
+    shell: "{{ __dovecot_nologin }}"
+    password_lock: true
+    system: true
+
+- name: DOVECOT | Create the mailbox root
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ dovecot_mail_root }}"
+    state: directory
+    owner: "{{ dovecot_mail_user }}"
+    group: "{{ dovecot_mail_group }}"
+    mode: '0700'
+
+- name: DOVECOT | Create private mailbox homes
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ dovecot_mail_root }}/{{ __dovecot_name }}"
+    state: directory
+    owner: "{{ dovecot_mail_user }}"
+    group: "{{ dovecot_mail_group }}"
+    mode: '0700'
+  loop: "{{ dovecot_users | map(attribute='name') }}"
+  loop_control:
+    loop_var: __dovecot_name
+    label: "{{ __dovecot_name }}"
+
+- name: DOVECOT | Write the private account database
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: users.j2
+    dest: /etc/dovecot/users
+    owner: root
+    group: dovecot
+    mode: '0640'
+  no_log: true
+  notify: restart dovecot
+
+- name: DOVECOT | Configure delivery and client access
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: dovecot.conf.j2
+    dest: /etc/dovecot/dovecot.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: "{{ dovecot_backup }}"
+    validate: "{{ __dovecot_validate_config }}"
+  notify: restart dovecot
+
+- name: DOVECOT | Manage the administrator Sieve script
+  ansible.builtin.import_tasks: sieve.yml
+
+- name: DOVECOT | Apply configuration changes before service enforcement
+  ansible.builtin.meta: flush_handlers
+
+- name: DOVECOT | Enable and start delivery
+  become: true
+  become_user: root
+  ansible.builtin.service:
+    name: dovecot
+    enabled: true
+    state: started

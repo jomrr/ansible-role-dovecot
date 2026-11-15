@@ -1,0 +1,11 @@
+---
+# role: dovecot
+# file: vars/RedHat.yml
+
+__dovecot_packages:
+  - dovecot
+__dovecot_imap_packages: []
+__dovecot_sieve_packages:
+  - dovecot-pigeonhole
+__dovecot_validate_config: /usr/bin/doveconf -c %s -n
+__dovecot_nologin: /usr/sbin/nologin

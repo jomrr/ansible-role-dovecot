@@ -1,0 +1,78 @@
+---
+# role: dovecot
+# file: defaults/main.yml
+
+# Hostname used in delivery greetings and generated messages.
+dovecot_hostname: '{{ ansible_facts.fqdn }}'
+
+# Address receiving delivery error reports; required.
+# dovecot_postmaster_address: postmaster@example.com
+
+# Default mailbox format, with optional per-user overrides.
+# Choices: maildir, mbox, sdbox, mdbox
+dovecot_mail_format: maildir
+
+# Parent directory for virtual mailbox homes.
+dovecot_mail_root: /var/vmail
+
+# Unprivileged system account owning virtual mailboxes.
+dovecot_mail_user: vmail
+
+# System group owning virtual mailboxes.
+dovecot_mail_group: vmail
+
+# Numeric UID reserved for virtual mailbox storage.
+dovecot_mail_uid: 5000
+
+# Numeric GID reserved for virtual mailbox storage.
+dovecot_mail_gid: 5000
+
+# Authoritative virtual accounts; removing an account preserves its stored mail.
+dovecot_users: []
+
+# Local delivery socket accessible only to the configured MTA account.
+dovecot_lmtp_socket: /var/spool/postfix/private/dovecot-lmtp
+
+# Expose a private SASL authentication socket for Postfix.
+dovecot_postfix_auth_enabled: true
+
+# Local SASL authentication socket inside the Postfix queue directory.
+dovecot_auth_socket: /var/spool/postfix/private/auth
+
+# Existing MTA account allowed to access delivery and authentication sockets.
+dovecot_socket_user: postfix
+
+# Existing MTA group assigned to delivery and authentication sockets.
+dovecot_socket_group: postfix
+
+# Enable IMAPS on port 993; plaintext IMAP remains disabled.
+dovecot_imap_enabled: false
+
+# Bind addresses for explicitly enabled network services.
+dovecot_listen:
+  - 127.0.0.1
+
+# Existing PEM certificate chain required for IMAPS or ManageSieve.
+dovecot_tls_certificate: ''
+
+# Existing root-readable PEM private key required for network services.
+dovecot_tls_private_key: ''
+
+# Minimum TLS version for client connections.
+# Choices: TLSv1.2, TLSv1.3
+dovecot_tls_min_protocol: TLSv1.2
+
+# Enable Pigeonhole filtering during LMTP delivery.
+dovecot_sieve_enabled: true
+
+# Optional administrator Sieve script evaluated before personal scripts.
+dovecot_sieve_before: ''
+
+# Maximum Sieve redirects per message; zero prohibits forwarding.
+dovecot_sieve_max_redirects: 0
+
+# Enable ManageSieve on port 4190 with STARTTLS required for remote clients.
+dovecot_managesieve_enabled: false
+
+# Back up the managed main configuration before replacement.
+dovecot_backup: false

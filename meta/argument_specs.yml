@@ -1,0 +1,138 @@
+---
+# role: dovecot
+# file: meta/argument_specs.yml
+
+argument_specs:
+  main:
+    short_description: Install and configure Dovecot for secure LMTP delivery, virtual
+      mailboxes and Sieve filtering.
+    options:
+      dovecot_hostname:
+        type: str
+        description: Hostname used in delivery greetings and generated messages.
+        default: '{{ ansible_facts.fqdn }}'
+      dovecot_postmaster_address:
+        type: str
+        description: Address receiving delivery error reports; required.
+        required: true
+      dovecot_mail_format:
+        type: str
+        description: Default mailbox format, with optional per-user overrides.
+        choices:
+          - maildir
+          - mbox
+          - sdbox
+          - mdbox
+        default: maildir
+      dovecot_mail_root:
+        type: str
+        description: Parent directory for virtual mailbox homes.
+        default: /var/vmail
+      dovecot_mail_user:
+        type: str
+        description: Unprivileged system account owning virtual mailboxes.
+        default: vmail
+      dovecot_mail_group:
+        type: str
+        description: System group owning virtual mailboxes.
+        default: vmail
+      dovecot_mail_uid:
+        type: int
+        description: Numeric UID reserved for virtual mailbox storage.
+        default: 5000
+      dovecot_mail_gid:
+        type: int
+        description: Numeric GID reserved for virtual mailbox storage.
+        default: 5000
+      dovecot_users:
+        type: list
+        description: Authoritative virtual accounts; removing an account preserves its stored
+          mail.
+        default: []
+        elements: dict
+        options:
+          name:
+            type: str
+            required: true
+            description: Unique lowercase mailbox address, also used as the login identity.
+          password_hash:
+            type: str
+            required: true
+            no_log: true
+            description: Dovecot SHA512-CRYPT, BLF-CRYPT or ARGON2ID hash; * disables password
+              login.
+          mail_format:
+            type: str
+            choices:
+              - maildir
+              - mbox
+              - sdbox
+              - mdbox
+            description: Optional override of dovecot_mail_format; changing formats does
+              not migrate mail.
+      dovecot_lmtp_socket:
+        type: str
+        description: Local delivery socket accessible only to the configured MTA account.
+        default: /var/spool/postfix/private/dovecot-lmtp
+      dovecot_postfix_auth_enabled:
+        type: bool
+        description: Expose a private SASL authentication socket for Postfix.
+        default: true
+      dovecot_auth_socket:
+        type: str
+        description: Local SASL authentication socket inside the Postfix queue directory.
+        default: /var/spool/postfix/private/auth
+      dovecot_socket_user:
+        type: str
+        description: Existing MTA account allowed to access delivery and authentication
+          sockets.
+        default: postfix
+      dovecot_socket_group:
+        type: str
+        description: Existing MTA group assigned to delivery and authentication sockets.
+        default: postfix
+      dovecot_imap_enabled:
+        type: bool
+        description: Enable IMAPS on port 993; plaintext IMAP remains disabled.
+        default: false
+      dovecot_listen:
+        type: list
+        description: Bind addresses for explicitly enabled network services.
+        default:
+          - 127.0.0.1
+        elements: str
+      dovecot_tls_certificate:
+        type: str
+        description: Existing PEM certificate chain required for IMAPS or ManageSieve.
+        default: ''
+      dovecot_tls_private_key:
+        type: str
+        description: Existing root-readable PEM private key required for network services.
+        default: ''
+      dovecot_tls_min_protocol:
+        type: str
+        description: Minimum TLS version for client connections.
+        choices:
+          - TLSv1.2
+          - TLSv1.3
+        default: TLSv1.2
+      dovecot_sieve_enabled:
+        type: bool
+        description: Enable Pigeonhole filtering during LMTP delivery.
+        default: true
+      dovecot_sieve_before:
+        type: str
+        description: Optional administrator Sieve script evaluated before personal scripts.
+        default: ''
+      dovecot_sieve_max_redirects:
+        type: int
+        description: Maximum Sieve redirects per message; zero prohibits forwarding.
+        default: 0
+      dovecot_managesieve_enabled:
+        type: bool
+        description: Enable ManageSieve on port 4190 with STARTTLS required for remote clients.
+        default: false
+      dovecot_backup:
+        type: bool
+        description: Back up the managed main configuration before replacement.
+        default: false

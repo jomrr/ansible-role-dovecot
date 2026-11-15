@@ -1,0 +1,37 @@
+---
+# role: dovecot
+# file: molecule/resources/playbooks/verify.yml
+
+
+- name: DOVECOT | Verify delivery and secure client access
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: DOVECOT | Exercise storage formats, Sieve, authentication and TLS policy
+      become: true
+      become_user: root
+      ansible.builtin.script:
+        cmd: ../tests/verify_delivery.py
+        executable: python3
+      changed_when: false
+
+    - name: DOVECOT | Exercise the delivery-only configuration
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        dovecot_imap_enabled: false
+        dovecot_managesieve_enabled: false
+        dovecot_postfix_auth_enabled: false
+        dovecot_sieve_enabled: false
+        dovecot_sieve_before: ''
+        dovecot_users:
+          - name: delivery@example.test
+            password_hash: '*'
+
+    - name: DOVECOT | Check feature removal and preserved mailbox data
+      become: true
+      become_user: root
+      ansible.builtin.script:
+        cmd: ../tests/verify_delivery.py --mda
+        executable: python3
+      changed_when: false

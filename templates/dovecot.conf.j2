@@ -1,0 +1,144 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
+auth_allow_cleartext = no
+auth_username_format = %{user | lower}
+mail_driver = {{ dovecot_mail_format }}
+mail_path = ~/mail
+passdb passwd-file {
+  passwd_file_path = /etc/dovecot/users
+}
+userdb passwd-file {
+  passwd_file_path = /etc/dovecot/users
+}
+{% else %}
+disable_plaintext_auth = yes
+auth_username_format = %Lu
+mail_location = {{ dovecot_mail_format }}:~/mail{{ ':INBOX=~/inbox' if dovecot_mail_format == 'mbox' else '' }}
+passdb {
+  driver = passwd-file
+  args = /etc/dovecot/users
+}
+userdb {
+  driver = passwd-file
+  args = /etc/dovecot/users
+}
+{% endif %}
+hostname = {{ dovecot_hostname | to_json }}
+postmaster_address = {{ dovecot_postmaster_address | to_json }}
+protocols = lmtp{{ ' imap' if dovecot_imap_enabled else '' }}{{ ' sieve' if dovecot_managesieve_enabled else '' }}
+listen = {{ dovecot_listen | join(', ') | to_json }}
+auth_mechanisms = plain login
+first_valid_uid = {{ dovecot_mail_uid }}
+last_valid_uid = {{ dovecot_mail_uid }}
+first_valid_gid = {{ dovecot_mail_gid }}
+last_valid_gid = {{ dovecot_mail_gid }}
+mail_privileged_group =
+mail_access_groups =
+mail_full_filesystem_access = no
+{% if dovecot_imap_enabled or dovecot_managesieve_enabled %}
+ssl = required
+ssl_min_protocol = {{ dovecot_tls_min_protocol }}
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+ssl_server_cert_file = {{ dovecot_tls_certificate | to_json }}
+ssl_server_key_file = {{ dovecot_tls_private_key | to_json }}
+{% else %}
+ssl_cert = <{{ dovecot_tls_certificate }}
+ssl_key = <{{ dovecot_tls_private_key }}
+{% endif %}
+{% else %}
+ssl = no
+{% endif %}
+service lmtp {
+  unix_listener {{ dovecot_lmtp_socket }} {
+    mode = 0600
+    user = {{ dovecot_socket_user | to_json }}
+    group = {{ dovecot_socket_group | to_json }}
+  }
+  inet_listener lmtp {
+    port = 0
+  }
+}
+service auth {
+{% if dovecot_postfix_auth_enabled %}
+  unix_listener {{ dovecot_auth_socket }} {
+    mode = 0600
+    user = {{ dovecot_socket_user | to_json }}
+    group = {{ dovecot_socket_group | to_json }}
+  }
+{% endif %}
+}
+{% if dovecot_imap_enabled %}
+service imap-login {
+  inet_listener imap {
+    port = 0
+  }
+  inet_listener imaps {
+    port = 993
+    ssl = yes
+  }
+}
+{% endif %}
+{% if dovecot_managesieve_enabled %}
+service managesieve-login {
+  inet_listener sieve {
+    port = 4190
+  }
+}
+{% endif %}
+namespace inbox {
+  inbox = yes
+  separator = /
+  mailbox Drafts {
+    special_use = \Drafts
+    auto = subscribe
+  }
+  mailbox Sent {
+    special_use = \Sent
+    auto = subscribe
+  }
+  mailbox Junk {
+    special_use = \Junk
+    auto = subscribe
+  }
+  mailbox Trash {
+    special_use = \Trash
+    auto = subscribe
+  }
+}
+{% if dovecot_sieve_enabled %}
+protocol lmtp {
+  mail_plugins = sieve
+}
+{% if __dovecot_version.stdout is version('2.4', '>=') %}
+sieve_script personal {
+  driver = file
+  path = ~/sieve
+  active_path = ~/.dovecot.sieve
+}
+{% if dovecot_sieve_before | length > 0 %}
+sieve_script before {
+  type = before
+  driver = file
+  path = /etc/dovecot/sieve-before.sieve
+}
+{% endif %}
+sieve_max_redirects = {{ dovecot_sieve_max_redirects }}
+sieve_max_script_size = 1M
+sieve_quota_script_count = 20
+sieve_quota_storage_size = 5M
+{% else %}
+plugin {
+  sieve = file:~/sieve;active=~/.dovecot.sieve
+{% if dovecot_sieve_before | length > 0 %}
+  sieve_before = /etc/dovecot/sieve-before.sieve
+{% endif %}
+  sieve_max_redirects = {{ dovecot_sieve_max_redirects }}
+  sieve_max_script_size = 1M
+  sieve_quota_max_scripts = 20
+  sieve_quota_max_storage = 5M
+}
+{% endif %}
+{% endif %}

@@ -1,0 +1,29 @@
+---
+# role: dovecot
+# file: handlers/main.yml
+
+- name: DOVECOT | Compile the administrator Sieve script
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: [sievec, -c, /etc/dovecot/dovecot.conf, /etc/dovecot/sieve-before.sieve]
+  changed_when: true
+  listen: compile sieve
+
+- name: DOVECOT | Protect the compiled Sieve script
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /etc/dovecot/sieve-before.svbin
+    owner: root
+    group: "{{ dovecot_mail_group }}"
+    mode: '0640'
+  listen: compile sieve
+
+- name: DOVECOT | Restart delivery with validated configuration
+  become: true
+  become_user: root
+  ansible.builtin.service:
+    name: dovecot
+    state: restarted
+  listen: restart dovecot

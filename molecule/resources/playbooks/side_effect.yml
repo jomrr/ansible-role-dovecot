@@ -1,0 +1,25 @@
+---
+# role: dovecot
+# file: molecule/resources/playbooks/side_effect.yml
+
+
+- name: DOVECOT | Introduce configuration and account drift
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: DOVECOT | Change the deployed hostname
+      become: true
+      become_user: root
+      ansible.builtin.lineinfile:
+        path: /etc/dovecot/dovecot.conf
+        regexp: '^hostname ='
+        line: hostname = drift.example.test
+
+    - name: DOVECOT | Disable an account in the deployed database
+      become: true
+      become_user: root
+      ansible.builtin.lineinfile:
+        path: /etc/dovecot/users
+        regexp: '^maildir@example.test:'
+        state: absent
+      no_log: true
