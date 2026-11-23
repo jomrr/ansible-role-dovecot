@@ -1,0 +1,69 @@
+passdb passwd-file {
+  passwd_file_path = /etc/dovecot/users
+  result_internalfail = return-fail
+}
+{% if dovecot_pam_enabled or (dovecot_sql_enabled and dovecot_sql.password_query) %}
+# A failed local password must never fall through to an external credential.
+passdb local-password-names {
+  driver = passwd-file
+  passwd_file_path = /etc/dovecot/local-password-names
+  deny = yes
+  mechanisms_filter = plain login
+  result_internalfail = return-fail
+}
+{% endif %}
+userdb passwd-file {
+  passwd_file_path = /etc/dovecot/users
+  result_internalfail = return-fail
+}
+{% if dovecot_sql_enabled %}
+!include /etc/dovecot/sql.conf.ext
+{% endif %}
+{% if dovecot_ldap_enabled %}
+!include /etc/dovecot/ldap.conf.ext
+{% endif %}
+{% if dovecot_postfix_auth_enabled %}
+protocol smtp {
+  passdb sasl-users {
+    driver = passwd-file
+    passwd_file_path = /etc/dovecot/sasl-users
+    mechanisms_filter = plain login
+    result_internalfail = return-fail
+  }
+}
+{% endif %}
+{% if dovecot_pam_enabled %}
+
+{% if dovecot_pam_username_format == 'localpart' %}
+# A qualified login is required before domain-restricted local-part mapping.
+passdb pam-qualified {
+  driver = static
+  deny = yes
+  username_filter = !*@*
+  mechanisms_filter = plain login
+}
+{% endif %}
+passdb pam {
+  driver = pam
+  username_filter = {{ dovecot_pam_username_filter | join(' ') }}
+  mechanisms_filter = plain login
+  service_name = {{ dovecot_pam_service }}
+{% if dovecot_pam_username_format == 'localpart' %}
+  fields {
+    user = %{user | username}
+  }
+{% endif %}
+  result_success = continue-ok
+  result_failure = return-fail
+  result_internalfail = return-fail
+}
+# PAM modules may rewrite PAM_USER; retain the complete mail login identity.
+passdb pam-identity {
+  driver = static
+  skip = unauthenticated
+  mechanisms_filter = plain login
+  fields {
+    user = %{original_user | lower}
+  }
+}
+{% endif %}

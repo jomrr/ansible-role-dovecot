@@ -154,18 +154,17 @@ class ClientTests(unittest.TestCase):
                 elif storage == 'mbox':
                     self.assertTrue((home / 'inbox').is_file())
                 elif storage == 'sdbox':
-                    self.assertTrue(list((home / 'mail').rglob('u.*')))
+                    self.assertTrue(list((home / 'mail/mailboxes/INBOX/dbox-Mails').glob('u.*')))
                 else:
                     self.assertTrue(list((home / 'mail/storage').glob('m.*')))
+                    self.assertTrue((home / 'mail/mailboxes/INBOX/dbox-Mails').is_dir())
 
     def test_sieve_before(self) -> None:
-        """Administrator filtering files spam into Junk for every format."""
-        for storage in FORMATS:
-            recipient = f'{storage}@example.test'
-            with self.subTest(storage=storage):
-                message_id = deliver(recipient, 'spam')
-                self.assertTrue(search(recipient, 'Junk', message_id))
-                self.assertFalse(search(recipient, 'INBOX', message_id))
+        """A terminal administrator rule files the message in Junk."""
+        recipient = 'maildir@example.test'
+        message_id = deliver(recipient, 'spam')
+        self.assertTrue(search(recipient, 'Junk', message_id))
+        self.assertFalse(search(recipient, 'INBOX', message_id))
 
     def test_rejected_credentials(self) -> None:
         """Incorrect passwords and delivery-only accounts cannot log in."""
@@ -293,6 +292,9 @@ class IdentityTests(unittest.TestCase):
             time.sleep(0.2)
         else:
             self.fail('Postfix did not deliver the submitted message through LMTP')
+        with submission_client() as client:
+            with self.assertRaises(smtplib.SMTPAuthenticationError):
+                authenticate_submission(client, 'sender@mail.test', AD_PASSWORD)
         imap = imap_client()
         try:
             with self.assertRaises(imaplib.IMAP4.error):

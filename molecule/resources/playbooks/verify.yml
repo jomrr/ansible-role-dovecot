@@ -15,11 +15,20 @@
         executable: python3
       changed_when: false
 
+    - name: DOVECOT | Verify session continuity, mailbox quota and SMTP vacation replies
+      become: true
+      become_user: root
+      ansible.builtin.script:
+        cmd: ../tests/verify_policy.py verify
+        executable: python3
+      changed_when: false
+
     - name: DOVECOT | Exercise PostgreSQL and local-part PAM identities
       ansible.builtin.include_role:
         name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
       vars:
         dovecot_sql: '{{ hostvars[inventory_hostname].dovecot_sql | combine({''driver'': ''pgsql'', ''port'': 5432}) }}'
+        dovecot_quota_full_tempfail: true
         dovecot_pam_username_format: localpart
         dovecot_pam_service: dovecot
         dovecot_auth_worker_user: ''
@@ -29,6 +38,14 @@
       become_user: root
       ansible.builtin.script:
         cmd: ../tests/verify_delivery.py --sql
+        executable: python3
+      changed_when: false
+
+    - name: DOVECOT | Verify temporary LMTP and Postfix failure on the same full mailbox
+      become: true
+      become_user: root
+      ansible.builtin.script:
+        cmd: ../tests/verify_policy.py defer
         executable: python3
       changed_when: false
 
@@ -61,6 +78,17 @@
   gather_facts: false
   tasks:
 
+    - name: DOVECOT | Require a vacation reply from each Postfix host at the remote SMTP receiver
+      become: true
+      become_user: root
+      ansible.builtin.wait_for:
+        path: /run/dovecot-test-smtp/messages
+        search_regex: '(?im)^Subject: fixture-away-{{ __dovecot_server | regex_escape }}\r?$'
+        timeout: 45
+      loop: "{{ groups['dovecot_servers'] }}"
+      loop_control:
+        loop_var: __dovecot_server
+
     - name: DOVECOT | Stop the directory and database fixture services
       become: true
       become_user: root
@@ -92,6 +120,8 @@
       ansible.builtin.include_role:
         name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
       vars:
+        dovecot_quota_enabled: false
+        dovecot_quota_status_enabled: false
         dovecot_mail_ownership: shared
         dovecot_mail_root: /var/vmail-shared
         dovecot_imap_enabled: false

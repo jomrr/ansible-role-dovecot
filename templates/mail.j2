@@ -1,0 +1,10 @@
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
+auth_allow_cleartext = no
+auth_username_format = %{user | lower}
+mail_driver = {{ dovecot_mail_format }}
+mail_path = ~/mail
+mail_home = {{ dovecot_mail_root }}/%{user}
+{% if dovecot_mail_format == 'mbox' %}
+mail_inbox_path = ~/inbox
+{% endif %}

@@ -1,0 +1,45 @@
+---
+# role: dovecot
+# file: tasks/selinux.yml
+
+- name: DOVECOT | Install SELinux management tools
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: "{{ __dovecot_selinux_packages }}"
+    state: present
+
+- name: DOVECOT | Label explicitly selected nonstandard TCP listener ports
+  become: true
+  become_user: root
+  community.general.seport:
+    ports: "{{ __dovecot_listener.port }}"
+    proto: tcp
+    setype: "{{ __dovecot_listener.type }}"
+    state: present
+  loop:
+    - {port: "{{ dovecot_imaps_port }}", type: pop_port_t, custom: "{{ dovecot_imap_enabled and dovecot_imaps_port != 993 }}"}
+    - {port: "{{ dovecot_managesieve_port }}", type: sieve_port_t, custom: "{{ dovecot_managesieve_enabled and dovecot_managesieve_port != 4190 }}"}
+  loop_control:
+    loop_var: __dovecot_listener
+    label: "{{ __dovecot_listener.port }}/tcp"
+  when: __dovecot_listener.custom
+
+- name: DOVECOT | Persist the mailbox file context
+  become: true
+  become_user: root
+  community.general.sefcontext:
+    target: "{{ dovecot_mail_root | regex_escape }}(/.*)?"
+    setype: "{{ dovecot_selinux_type }}"
+    state: present
+
+- name: DOVECOT | Apply the mailbox context to existing storage
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: "{{ ['restorecon', '-RDv'] + (['-n'] if ansible_check_mode else []) + [dovecot_mail_root] }}"
+  environment:
+    LC_ALL: C
+  register: __dovecot_restorecon
+  check_mode: false
+  changed_when: __dovecot_restorecon.stdout is search('(?im)^(relabeled |would relabel |restorecon reset )')

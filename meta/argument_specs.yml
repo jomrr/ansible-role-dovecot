@@ -90,6 +90,9 @@ argument_specs:
           gid:
             type: int
             description: Mailbox primary GID, required in per_user mode.
+          quota_storage_size:
+            type: int
+            description: Optional mailbox quota in bytes, including zero for unlimited storage.
           mail_format:
             type: str
             choices:
@@ -122,7 +125,7 @@ argument_specs:
         default: postfix
       dovecot_imap_enabled:
         type: bool
-        description: Enable IMAPS on port 993; plaintext IMAP remains disabled.
+        description: Enable IMAPS on dovecot_imaps_port.
         default: false
       dovecot_listen:
         type: list
@@ -159,7 +162,8 @@ argument_specs:
         default: 0
       dovecot_managesieve_enabled:
         type: bool
-        description: Enable ManageSieve on port 4190 with STARTTLS required for remote clients.
+        description: Enable ManageSieve on dovecot_managesieve_port with STARTTLS required
+          for remote clients.
         default: false
       dovecot_backup:
         type: bool
@@ -231,8 +235,8 @@ argument_specs:
           file and LDAP sources.
       dovecot_sql:
         type: dict
-        description: TLS-verified SQL connection and native queries; no schema changes are
-          performed.
+        description: Local Unix socket or TLS-verified TCP connection with native Dovecot
+          queries.
         options:
           driver:
             type: str
@@ -244,11 +248,12 @@ argument_specs:
           host:
             type: str
             required: true
-            description: Database DNS hostname matching its TLS certificate.
+            description: Database TLS hostname, absolute MySQL socket filename or PostgreSQL
+              socket directory.
           port:
             type: int
             required: true
-            description: TCP port of the database server.
+            description: Server port, also used to select a PostgreSQL socket.
           database:
             type: str
             required: true
@@ -259,13 +264,11 @@ argument_specs:
             description: Read-only database account.
           password:
             type: str
-            required: true
             no_log: true
-            description: Database account password, supplied from a secret store.
+            description: Secret required for TCP or password-based socket authentication.
           ca_file:
             type: str
-            required: true
-            description: Existing trusted CA file used to verify the SQL server certificate.
+            description: Trusted CA file required for SQL over TCP.
           password_query:
             type: str
             required: true
@@ -353,3 +356,181 @@ argument_specs:
           user_fields: {}
           iterate_filter: ''
           iterate_user: '%{ldap:mail}'
+      dovecot_home_provisioning:
+        type: str
+        description: Reconcile per-user LDAP and SQL mailbox homes on role runs, also on
+          a timer, or externally.
+        default: converge
+        choices:
+          - converge
+          - timer
+          - none
+      dovecot_home_interval:
+        type: int
+        description: Seconds between optional systemd home provisioning runs.
+        default: 300
+      dovecot_selinux_type:
+        type: str
+        description: Persistent SELinux file type for the mailbox tree on SELinux-enabled
+          hosts.
+        default: mail_spool_t
+      dovecot_lmtp_enabled:
+        type: bool
+        description: Enable LMTP delivery on the private MTA socket.
+        default: true
+      dovecot_submission_host:
+        type: str
+        description: SMTP endpoint (host or host:port) for messages generated during Sieve
+          delivery.
+        default: ''
+      dovecot_imap_addresses:
+        type: list
+        description: IMAPS bind addresses, defaulting to dovecot_listen.
+        default: []
+        elements: str
+      dovecot_imaps_port:
+        type: int
+        description: Implicit TLS IMAP port.
+        default: 993
+      dovecot_managesieve_addresses:
+        type: list
+        description: ManageSieve bind addresses, defaulting to dovecot_listen.
+        default: []
+        elements: str
+      dovecot_managesieve_port:
+        type: int
+        description: ManageSieve port for STARTTLS clients.
+        default: 4190
+      dovecot_imap_max_userip_connections:
+        type: int
+        description: Optional IMAP connection limit per user and source IP address.
+      dovecot_imap_idle_notify_interval:
+        type: int
+        description: Optional IMAP IDLE notification interval in seconds.
+      dovecot_tls_cipher_list:
+        type: str
+        description: OpenSSL cipher list for TLS through 1.2, defaulting to the system policy.
+        default: ''
+      dovecot_tls_curve_list:
+        type: str
+        description: OpenSSL curve list, defaulting to the system policy.
+        default: ''
+      dovecot_tls_sni:
+        type: list
+        description: Additional certificates selected by TLS server name.
+        default: []
+        elements: dict
+        options:
+          name:
+            type: str
+            required: true
+            description: DNS name for SNI.
+          certificate:
+            type: str
+            required: true
+            description: Absolute PEM certificate chain path.
+          private_key:
+            type: str
+            required: true
+            description: Absolute PEM private key path.
+      dovecot_sieve_after:
+        type: str
+        description: Administrator Sieve source executed after the personal or default script.
+        default: ''
+      dovecot_sieve_default:
+        type: str
+        description: Administrator Sieve source used when a personal script is inactive.
+        default: ''
+      dovecot_sieve_extensions:
+        type: list
+        description: Personal Sieve extension allowlist. An empty list selects Pigeonhole
+          defaults.
+        default: []
+        elements: str
+      dovecot_sieve_max_script_size:
+        type: int
+        description: Maximum Sieve script size in bytes.
+        default: 1048576
+      dovecot_sieve_quota_script_count:
+        type: int
+        description: Maximum number of personal Sieve scripts.
+        default: 20
+      dovecot_sieve_quota_storage_size:
+        type: int
+        description: Maximum total personal Sieve storage in bytes.
+        default: 5242880
+      dovecot_lda_mailbox_autocreate:
+        type: bool
+        description: Allow delivery to create missing destination mailboxes.
+        default: false
+      dovecot_auth_cache_size:
+        type: int
+        description: Authentication cache size in bytes. Zero disables caching.
+        default: 0
+      dovecot_auth_cache_ttl:
+        type: int
+        description: Successful authentication cache lifetime in seconds when caching is
+          enabled.
+        default: 3600
+      dovecot_auth_cache_negative_ttl:
+        type: int
+        description: Failed authentication cache lifetime in seconds when caching is enabled.
+        default: 3600
+      dovecot_recipient_delimiter:
+        type: str
+        description: Recipient address extension delimiter. An empty string disables extensions.
+        default: +
+      dovecot_quota_enabled:
+        type: bool
+        description: Enforce count-based storage quota and advertise IMAP QUOTA when IMAPS
+          is enabled.
+        default: false
+      dovecot_quota_storage_size:
+        type: int
+        description: Default quota in bytes. Zero allows unlimited storage.
+        default: 0
+      dovecot_quota_grace:
+        type: int
+        description: Additional bytes allowed on the delivery that first crosses the limit.
+        default: 0
+      dovecot_quota_full_tempfail:
+        type: bool
+        description: Temporarily defer delivery when a mailbox is full.
+        default: false
+      dovecot_quota_status_enabled:
+        type: bool
+        description: Expose a private Postfix recipient quota policy socket.
+        default: false
+      dovecot_quota_status_socket:
+        type: str
+        description: Absolute path of the Postfix quota policy socket.
+        default: /var/spool/postfix/private/quota-status
+      dovecot_quota_warning_thresholds:
+        type: list
+        description: Storage percentages that invoke the warning program when crossed, highest
+          first.
+        default: []
+        elements: int
+      dovecot_quota_warning_program:
+        type: str
+        description: Absolute path to the administrator-provided quota warning executable.
+        default: ''
+      dovecot_quota_warning_user:
+        type: str
+        description: Unprivileged account running the quota warning program.
+        default: nobody
+      dovecot_mail_plugins:
+        type: list
+        description: Additional installed mail plugins inherited by each protocol.
+        default: []
+        elements: str
+      dovecot_services:
+        type: dict
+        description: Native service settings keyed by service name, for example process_limit
+          for imap-login.
+        default: {}
+      dovecot_config:
+        type: str
+        no_log: true
+        description: Trusted native configuration appended to the managed main configuration.
+        default: ''

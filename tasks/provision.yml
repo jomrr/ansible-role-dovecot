@@ -1,0 +1,93 @@
+---
+# role: dovecot
+# file: tasks/provision.yml
+
+- name: DOVECOT | Install the mailbox home reconciler
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    src: dovecot_provision_homes.py
+    dest: /usr/local/sbin/dovecot-provision-homes
+    owner: root
+    group: root
+    mode: '0755'
+  register: __dovecot_home_tool
+  when: __dovecot_provision
+
+- name: DOVECOT | Reconcile external mailbox homes
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: "{{ __dovecot_home_args + (['--check'] if ansible_check_mode else []) }}"
+  register: __dovecot_homes
+  check_mode: false
+  changed_when: __dovecot_homes.stdout | int > 0
+  when:
+    - __dovecot_provision
+    - not ansible_check_mode or not (__dovecot_home_tool.changed or __dovecot_config_file.changed)
+
+- name: DOVECOT | Install periodic provisioning units
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: "dovecot-provision-homes.{{ __dovecot_unit }}.j2"
+    dest: "/etc/systemd/system/dovecot-provision-homes.{{ __dovecot_unit }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [service, timer]
+  loop_control:
+    loop_var: __dovecot_unit
+  when: __dovecot_provision and dovecot_home_provisioning == 'timer'
+  notify: reload systemd
+
+- name: DOVECOT | Load provisioning units before managing the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: DOVECOT | Enable periodic mailbox provisioning
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: dovecot-provision-homes.timer
+    enabled: true
+    state: started
+  when: __dovecot_provision and dovecot_home_provisioning == 'timer'
+
+- name: DOVECOT | Inspect the managed timer before decommissioning it
+  ansible.builtin.stat:
+    path: /etc/systemd/system/dovecot-provision-homes.timer
+    get_checksum: false
+    get_mime: false
+  register: __dovecot_old_timer
+  when: not __dovecot_provision or dovecot_home_provisioning != 'timer'
+
+- name: DOVECOT | Stop and disable the previous home timer
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: dovecot-provision-homes.timer
+    enabled: false
+    state: stopped
+  when:
+    - not __dovecot_provision or dovecot_home_provisioning != 'timer'
+    - __dovecot_old_timer.stat.exists
+
+- name: DOVECOT | Remove inactive provisioning units
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "/etc/systemd/system/dovecot-provision-homes.{{ __dovecot_unit }}"
+    state: absent
+  loop: [service, timer]
+  loop_control:
+    loop_var: __dovecot_unit
+  when: not __dovecot_provision or dovecot_home_provisioning != 'timer'
+  notify: reload systemd
+
+- name: DOVECOT | Remove the unused home reconciler
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /usr/local/sbin/dovecot-provision-homes
+    state: absent
+  when: not __dovecot_provision

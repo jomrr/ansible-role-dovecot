@@ -1,0 +1,14 @@
+---
+# role: dovecot
+# file: tasks/service.yml
+
+- name: DOVECOT | Apply configuration changes before service enforcement
+  ansible.builtin.meta: flush_handlers
+
+- name: DOVECOT | Enable and start delivery
+  become: true
+  become_user: root
+  ansible.builtin.service:
+    name: dovecot
+    enabled: true
+    state: started

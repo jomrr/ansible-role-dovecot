@@ -2,29 +2,12 @@
 # role: dovecot
 # file: tasks/sieve.yml
 
-- name: DOVECOT | Validate and install the administrator Sieve script
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: sieve-before.sieve.j2
-    dest: /etc/dovecot/sieve-before.sieve
-    owner: root
-    group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
-    mode: '0640'
-    validate: /usr/bin/sievec -c /etc/dovecot/dovecot.conf %s
-  when: dovecot_sieve_before | length > 0
-  notify: compile sieve
-
-- name: DOVECOT | Remove disabled administrator filtering
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: "{{ __dovecot_sieve_file }}"
-    state: absent
-  loop:
-    - /etc/dovecot/sieve-before.sieve
-    - /etc/dovecot/sieve-before.svbin
+- name: DOVECOT | Reconcile each administrator Sieve script and its binary
+  ansible.builtin.include_tasks: sieve-script.yml
+  loop: "{{ __dovecot_sieve_scripts | dict2items }}"
   loop_control:
-    loop_var: __dovecot_sieve_file
-    label: "{{ __dovecot_sieve_file }}"
-  when: dovecot_sieve_before | length == 0
+    loop_var: __dovecot_script
+    label: "{{ __dovecot_script.key }}"
+  vars:
+    __dovecot_script_path: "/etc/dovecot/sieve-{{ __dovecot_script.key }}"
+    __dovecot_script_group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"

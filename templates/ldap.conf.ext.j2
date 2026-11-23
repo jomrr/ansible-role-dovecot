@@ -1,6 +1,5 @@
 # Managed by ansible.
 # file: {{ template_destpath }}
-{% if __dovecot_version.stdout is version('2.4', '>=') %}
 ldap_uris = {{ dovecot_ldap.uris | join(' ') | to_json(ensure_ascii=False) }}
 ldap_auth_dn = {{ dovecot_ldap.bind_dn | to_json(ensure_ascii=False) }}
 ldap_auth_dn_password = {{ dovecot_ldap.bind_password | to_json(ensure_ascii=False) }}
@@ -26,17 +25,3 @@ userdb ldap {
 {% endif %}
   result_internalfail = return-fail
 }
-{% else %}
-uris = {{ dovecot_ldap.uris | join(' ') }}
-dn = {{ dovecot_ldap.bind_dn }}
-dnpass = {{ dovecot_ldap.bind_password | to_json(ensure_ascii=False) }}
-base = {{ dovecot_ldap.base }}
-ldap_version = 3
-tls_ca_cert_file = {{ dovecot_ldap.ca_file }}
-tls_require_cert = hard
-user_filter = {{ dovecot_ldap.user_filter }}
-user_attrs = {% for __dovecot_field, __dovecot_value in dovecot_ldap.user_fields.items() %}={{ __dovecot_field }}={{ __dovecot_value }}{{ ', ' if not loop.last else '' }}{% endfor %}
-
-iterate_filter = {{ dovecot_ldap.iterate_filter }}
-iterate_attrs = =user={{ dovecot_ldap.iterate_user }}
-{% endif %}

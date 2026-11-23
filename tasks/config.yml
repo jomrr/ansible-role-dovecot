@@ -1,0 +1,43 @@
+---
+# role: dovecot
+# file: tasks/config.yml
+
+- name: DOVECOT | Create the mail process groups for Sieve scripts and quota warnings
+  become: true
+  become_user: root
+  ansible.builtin.group:
+    name: "{{ __dovecot_group }}"
+    system: true
+  loop: "{{ __dovecot_access_groups }}"
+  loop_control:
+    loop_var: __dovecot_group
+
+- name: DOVECOT | Configure delivery and client access
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: "dovecot.conf.j2"
+    dest: /etc/dovecot/dovecot.conf
+    owner: root
+    group: root
+    mode: "{{ '0600' if dovecot_config else '0644' }}"
+    backup: "{{ dovecot_backup }}"
+    validate: "{{ __dovecot_validate_config }}"
+  register: __dovecot_config_file
+  no_log: "{{ dovecot_config | length > 0 }}"
+  notify: reload dovecot
+
+- name: DOVECOT | Remove disabled lookup credentials
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "/etc/dovecot/{{ __dovecot_backend.name }}.conf.ext"
+    state: absent
+  loop:
+    - {name: sql, enabled: "{{ dovecot_sql_enabled }}"}
+    - {name: ldap, enabled: "{{ dovecot_ldap_enabled }}"}
+  loop_control:
+    loop_var: __dovecot_backend
+    label: "{{ __dovecot_backend.name }}"
+  when: not __dovecot_backend.enabled
+  notify: reload dovecot

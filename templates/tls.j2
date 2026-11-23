@@ -1,0 +1,20 @@
+{% if dovecot_imap_enabled or dovecot_managesieve_enabled %}
+ssl = required
+ssl_min_protocol = {{ dovecot_tls_min_protocol }}
+ssl_server_cert_file = {{ dovecot_tls_certificate | to_json }}
+ssl_server_key_file = {{ dovecot_tls_private_key | to_json }}
+{% if dovecot_tls_cipher_list %}
+ssl_cipher_list = {{ dovecot_tls_cipher_list | to_json }}
+{% endif %}
+{% if dovecot_tls_curve_list %}
+ssl_curve_list = {{ dovecot_tls_curve_list | to_json }}
+{% endif %}
+{% for certificate in dovecot_tls_sni %}
+local_name {{ certificate.name }} {
+  ssl_server_cert_file = {{ certificate.certificate | to_json }}
+  ssl_server_key_file = {{ certificate.private_key | to_json }}
+}
+{% endfor %}
+{% else %}
+ssl = no
+{% endif %}

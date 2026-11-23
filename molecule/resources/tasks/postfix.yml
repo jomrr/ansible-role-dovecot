@@ -11,6 +11,7 @@
       compatibility_level = 3.6
       myhostname = {{ inventory_hostname }}.mail.test
       setgid_group = {{ 'maildrop' if ansible_facts.os_family == 'Suse' else 'postdrop' }}
+      authorized_submit_users = root
       mydestination =
       inet_interfaces = loopback-only
       inet_protocols = ipv4
@@ -24,8 +25,11 @@
       smtpd_relay_restrictions = check_sasl_access texthash:/etc/postfix/submission-access, reject
       smtpd_sender_restrictions = reject_authenticated_sender_login_mismatch
       smtpd_sender_login_maps = texthash:/etc/postfix/sender-logins
+      relay_domains = replies.example.test
+      transport_maps = texthash:/etc/postfix/test-transports
       virtual_mailbox_domains = example.test, mail.test
       virtual_mailbox_maps = texthash:/etc/postfix/mailboxes
+      smtpd_recipient_restrictions = check_policy_service unix:private/quota-status
       virtual_transport = lmtp:unix:private/dovecot-lmtp
     mode: '0644'
 
@@ -66,6 +70,16 @@
       adsql@mail.test 1
       local@mail.test 1
       maildir@example.test 1
+      quota@example.test 1
+    mode: '0644'
+
+- name: DOVECOT | Route vacation responses to the independent SMTP receiver
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/postfix/test-transports
+    content: |
+      replies.example.test smtp:[{{ hostvars['dc-dovecot'].ansible_facts.default_ipv4.address }}]:10026
     mode: '0644'
 
 - name: DOVECOT | Enable the SMTP submission listener
@@ -73,6 +87,19 @@
   become_user: root
   ansible.builtin.command:
     argv: [postconf, -M, 'submission/inet=submission inet n - n - - smtpd']
+  changed_when: true
+
+- name: DOVECOT | Add the loopback Sieve reinjection listener
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - postconf
+      - -M
+      - >-
+        127.0.0.1:10025/inet=127.0.0.1:10025 inet n - n - - smtpd
+        -o smtpd_tls_security_level=none -o smtpd_sasl_auth_enable=no
+        -o smtpd_relay_restrictions=reject_unauth_destination
   changed_when: true
 
 - name: DOVECOT | Start the submission fixture

@@ -6,5 +6,15 @@
 - name: DOVECOT | Converge the mail service
   hosts: dovecot_servers
   gather_facts: true
+  pre_tasks:
+    - name: DOVECOT | Read the new mailbox activation state
+      ansible.builtin.stat:
+        path: /run/dovecot-test-file-account
+        get_checksum: false
+        get_mime: false
+      register: __dovecot_new_file_account
   roles:
     - role: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      dovecot_users: >-
+        {{ hostvars[inventory_hostname].dovecot_users if __dovecot_new_file_account.stat.exists else
+           hostvars[inventory_hostname].dovecot_users | rejectattr('name', 'equalto', 'maildir@example.test') | list }}

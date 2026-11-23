@@ -7,6 +7,7 @@
   vars:
     __dovecot_platform_files:
       files:
+        - "{{ ansible_facts.distribution }}.yml"
         - "{{ ansible_facts.os_family }}.yml"
       paths:
         - "{{ role_path }}/vars"
@@ -14,211 +15,26 @@
 - name: DOVECOT | Validate deployment inputs
   ansible.builtin.import_tasks: assert.yml
 
-- name: DOVECOT | Install delivery and selected protocol packages
-  become: true
-  become_user: root
-  ansible.builtin.package:
-    name: >-
-      {{ __dovecot_packages
-         + (dovecot_imap_enabled | ternary(__dovecot_imap_packages, []))
-         + (dovecot_sieve_enabled | ternary(__dovecot_sieve_packages, []))
-         + (dovecot_gssapi_enabled | ternary(__dovecot_gssapi_packages, []))
-         + (dovecot_sql_enabled | ternary(__dovecot_sql_packages[dovecot_sql.driver], []))
-         + (dovecot_ldap_enabled | ternary(__dovecot_ldap_packages, [])) }}
-    state: present
-    # Prevent package scripts from starting an unconfigured daemon.
-    policy_rc_d: "{{ 101 if ansible_facts.pkg_mgr == 'apt' else omit }}"
+- name: DOVECOT | Install Dovecot 2.4 packages
+  ansible.builtin.import_tasks: install.yml
 
-- name: DOVECOT | Read the installed configuration dialect
-  ansible.builtin.command:
-    argv: [/usr/sbin/dovecot, --version]
-  register: __dovecot_version
-  changed_when: false
-  check_mode: false
+- name: DOVECOT | Prepare mailbox storage
+  ansible.builtin.import_tasks: storage.yml
 
-- name: DOVECOT | Require a supported Dovecot version
-  ansible.builtin.assert:
-    that:
-      - __dovecot_version.stdout is match('^2\.[34]\.')
-    fail_msg: Dovecot 2.3 or 2.4 is required.
-    quiet: true
+- name: DOVECOT | Manage file accounts
+  ansible.builtin.import_tasks: accounts.yml
 
-- name: DOVECOT | Reject whitespace unsupported by the legacy MySQL connection parser
-  ansible.builtin.assert:
-    that:
-      - dovecot_sql.password is not search('\s')
-    fail_msg: Dovecot 2.3 MySQL connection passwords cannot contain whitespace.
-    quiet: true
-  when:
-    - dovecot_sql_enabled
-    - dovecot_sql.driver == 'mysql'
-    - __dovecot_version.stdout is version('2.4', '<')
-  no_log: true
+- name: DOVECOT | Manage external lookup connections
+  ansible.builtin.import_tasks: lookups.yml
 
-- name: DOVECOT | Create the mailbox group
-  become: true
-  become_user: root
-  ansible.builtin.group:
-    name: "{{ dovecot_mail_group }}"
-    gid: "{{ dovecot_mail_gid }}"
-    system: true
-  when: dovecot_mail_ownership == 'shared'
-
-- name: DOVECOT | Create the mailbox storage account
-  become: true
-  become_user: root
-  ansible.builtin.user:
-    name: "{{ dovecot_mail_user }}"
-    uid: "{{ dovecot_mail_uid }}"
-    group: "{{ dovecot_mail_group }}"
-    home: "{{ dovecot_mail_root }}"
-    create_home: false
-    shell: "{{ __dovecot_nologin }}"
-    password_lock: true
-    system: true
-  when: dovecot_mail_ownership == 'shared'
-
-- name: DOVECOT | Inspect the parent before enabling per-user storage
-  become: true
-  become_user: root
-  ansible.builtin.stat:
-    path: "{{ dovecot_mail_root }}"
-    get_checksum: false
-    get_mime: false
-  register: __dovecot_storage_root
-  when: dovecot_mail_ownership == 'per_user'
-
-- name: DOVECOT | Require a trusted parent before provisioning mailbox homes
-  ansible.builtin.assert:
-    that:
-      - >-
-        not __dovecot_storage_root.stat.exists or
-        (__dovecot_storage_root.stat.isdir and __dovecot_storage_root.stat.uid == 0
-         and not __dovecot_storage_root.stat.wgrp and not __dovecot_storage_root.stat.woth)
-    fail_msg: Prepare a root-owned private storage tree or select shared ownership for an existing vmail deployment.
-  when: dovecot_mail_ownership == 'per_user'
-
-- name: DOVECOT | Create the mailbox root
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: "{{ dovecot_mail_root }}"
-    state: directory
-    owner: "{{ 'root' if dovecot_mail_ownership == 'per_user' else dovecot_mail_user }}"
-    group: "{{ 'root' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
-    mode: "{{ '0711' if dovecot_mail_ownership == 'per_user' else '0700' }}"
-
-- name: DOVECOT | Create private mailbox homes
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: "{{ dovecot_mail_root }}/{{ __dovecot_mailbox.name }}"
-    state: directory
-    owner: "{{ __dovecot_mailbox.uid | default(dovecot_mail_uid) | string }}"
-    group: "{{ __dovecot_mailbox.gid | default(dovecot_mail_gid) | string }}"
-    mode: '0700'
-    follow: false
-  loop: "{{ __dovecot_mailbox_metadata }}"
-  loop_control:
-    loop_var: __dovecot_mailbox
-    label: "{{ __dovecot_mailbox.name }}"
-
-- name: DOVECOT | Write the private account database
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: users.j2
-    dest: /etc/dovecot/users
-    owner: root
-    group: dovecot
-    mode: '0640'
-  no_log: true
-  notify: restart dovecot
-
-- name: DOVECOT | Write the private SMTP authentication database
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: sasl-users.j2
-    dest: /etc/dovecot/sasl-users
-    owner: root
-    group: dovecot
-    mode: '0640'
-  no_log: true
-  notify: restart dovecot
-
-- name: DOVECOT | Configure the SQL lookup connection
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: sql.conf.ext.j2
-    dest: /etc/dovecot/sql.conf.ext
-    owner: root
-    group: dovecot
-    mode: '0640'
-  when: dovecot_sql_enabled
-  no_log: true
-  notify: restart dovecot
-
-- name: DOVECOT | Configure the directory lookup connection
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: ldap.conf.ext.j2
-    dest: /etc/dovecot/ldap.conf.ext
-    owner: root
-    group: dovecot
-    mode: '0640'
-  when: dovecot_ldap_enabled
-  no_log: true
-  notify: restart dovecot
-
-- name: DOVECOT | Remove disabled lookup credentials
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: "/etc/dovecot/{{ __dovecot_backend.name }}.conf.ext"
-    state: absent
-  loop:
-    - {name: sql, enabled: "{{ dovecot_sql_enabled }}"}
-    - {name: ldap, enabled: "{{ dovecot_ldap_enabled }}"}
-  loop_control:
-    loop_var: __dovecot_backend
-    label: "{{ __dovecot_backend.name }}"
-  when: not __dovecot_backend.enabled
-  notify: restart dovecot
-
-- name: DOVECOT | Create the reader group for administrator Sieve rules
-  become: true
-  become_user: root
-  ansible.builtin.group:
-    name: dovecot-sieve
-    system: true
-  when: dovecot_mail_ownership == 'per_user' and dovecot_sieve_before | length > 0
-
-- name: DOVECOT | Configure delivery and client access
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: dovecot.conf.j2
-    dest: /etc/dovecot/dovecot.conf
-    owner: root
-    group: root
-    mode: '0644'
-    backup: "{{ dovecot_backup }}"
-    validate: "{{ __dovecot_validate_config }}"
-  notify: restart dovecot
+- name: DOVECOT | Configure delivery and client protocols
+  ansible.builtin.import_tasks: config.yml
 
 - name: DOVECOT | Manage the administrator Sieve script
   ansible.builtin.import_tasks: sieve.yml
 
-- name: DOVECOT | Apply configuration changes before service enforcement
-  ansible.builtin.meta: flush_handlers
+- name: DOVECOT | Activate the delivery service
+  ansible.builtin.import_tasks: service.yml
 
-- name: DOVECOT | Enable and start delivery
-  become: true
-  become_user: root
-  ansible.builtin.service:
-    name: dovecot
-    enabled: true
-    state: started
+- name: DOVECOT | Provision homes from active mailbox lookups
+  ansible.builtin.import_tasks: provision.yml

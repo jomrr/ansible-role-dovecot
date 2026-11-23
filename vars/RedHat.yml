@@ -14,3 +14,4 @@ __dovecot_ldap_packages: []
 __dovecot_sql_packages:
   mysql: ['dovecot-mysql']
   pgsql: ['dovecot-pgsql']
+__dovecot_selinux_packages: [policycoreutils-python-utils]

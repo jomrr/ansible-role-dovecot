@@ -1,0 +1,39 @@
+---
+# role: dovecot
+# file: tasks/install.yml
+
+- name: DOVECOT | Configure the Dovecot CE package source on AlmaLinux
+  ansible.builtin.import_tasks: almalinux.yml
+  when: ansible_facts.distribution == 'AlmaLinux'
+
+- name: DOVECOT | Install delivery and selected protocol packages
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: >-
+      {{ __dovecot_packages
+         + (dovecot_imap_enabled | ternary(__dovecot_imap_packages, []))
+         + (dovecot_sieve_enabled | ternary(__dovecot_sieve_packages, []))
+         + (dovecot_gssapi_enabled | ternary(__dovecot_gssapi_packages, []))
+         + (dovecot_sql_enabled | ternary(__dovecot_sql_packages[dovecot_sql.driver], []))
+         + (dovecot_ldap_enabled | ternary(__dovecot_ldap_packages, [])) }}
+    enablerepo: "{{ ['crb'] if ansible_facts.distribution == 'AlmaLinux' else omit }}"
+    state: present
+    # Prevent package scripts from starting an unconfigured daemon.
+    policy_rc_d: "{{ 101 if ansible_facts.pkg_mgr == 'apt' else omit }}"
+  register: __dovecot_installed_packages
+  notify: reload dovecot
+
+- name: DOVECOT | Read the installed Dovecot version
+  ansible.builtin.command:
+    argv: [/usr/sbin/dovecot, --version]
+  register: __dovecot_version
+  changed_when: false
+  check_mode: false
+
+- name: DOVECOT | Require Dovecot 2.4
+  ansible.builtin.assert:
+    that:
+      - __dovecot_version.stdout is match('^2\.4\.')
+    fail_msg: Dovecot 2.4 packages are required. Configure a compatible package repository before running the role.
+    quiet: true

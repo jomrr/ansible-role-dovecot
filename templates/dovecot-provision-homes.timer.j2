@@ -1,0 +1,11 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+[Unit]
+Description=Reconcile directory-backed Dovecot mailbox homes
+
+[Timer]
+OnBootSec={{ dovecot_home_interval }}s
+OnUnitInactiveSec={{ dovecot_home_interval }}s
+
+[Install]
+WantedBy=timers.target

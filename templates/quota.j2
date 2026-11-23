@@ -1,0 +1,40 @@
+# Set the limit outside the named root so userdb can override it on 2.4.1.
+quota_storage_size = {{ dovecot_quota_storage_size }}B
+quota_storage_grace = {{ dovecot_quota_grace }}B
+quota_full_tempfail = {{ dovecot_quota_full_tempfail | ternary('yes', 'no') }}
+quota user {
+  driver = count
+{% for percent in dovecot_quota_warning_thresholds | sort(reverse=true) %}
+  warning warn-{{ percent }} {
+    quota_storage_percentage = {{ percent }}
+    execute quota-warning {
+      args = {{ percent }} %{user}
+    }
+  }
+{% endfor %}
+}
+{% if dovecot_quota_status_enabled %}
+quota_status_success = DUNNO
+quota_status_nouser = DUNNO
+quota_status_overquota = {{ '452 4.2.2' if dovecot_quota_full_tempfail else '552 5.2.2' }} Mailbox full
+service quota-status {
+  executable = quota-status -p postfix
+  # mbox requires one client per process for locking.
+  client_limit = 1
+  unix_listener {{ dovecot_quota_status_socket }} {
+    mode = 0600
+    user = {{ dovecot_socket_user | to_json }}
+    group = {{ dovecot_socket_group | to_json }}
+  }
+}
+{% endif %}
+{% if dovecot_quota_warning_thresholds %}
+service quota-warning {
+  executable = script {{ dovecot_quota_warning_program }}
+  user = {{ dovecot_quota_warning_user | to_json }}
+  unix_listener quota-warning {
+    mode = 0660
+    group = dovecot-quota
+  }
+}
+{% endif %}

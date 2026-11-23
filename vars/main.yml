@@ -4,3 +4,24 @@
 
 # Keep password hashes out of ownership assertions and filesystem module results.
 __dovecot_mailbox_metadata: "{{ dovecot_users | map('combine', {'password_hash': ''}) | list }}"
+
+__dovecot_sieve_scripts:
+  before: "{{ dovecot_sieve_before }}"
+  after: "{{ dovecot_sieve_after }}"
+  default: "{{ dovecot_sieve_default }}"
+
+__dovecot_access_groups: >-
+  {{ (['dovecot-sieve'] if (dovecot_mail_ownership == 'per_user' and __dovecot_sieve_scripts.values() | select | list) else [])
+     + (['dovecot-quota'] if dovecot_quota_enabled and dovecot_quota_warning_thresholds else []) }}
+
+__dovecot_provision: >-
+  {{ dovecot_mail_ownership == 'per_user' and dovecot_home_provisioning != 'none'
+     and (dovecot_ldap_enabled or (dovecot_sql_enabled and dovecot_sql.user_query | length > 0)) }}
+
+__dovecot_home_args:
+  - /usr/local/sbin/dovecot-provision-homes
+  - "{{ dovecot_mail_root }}"
+  - "{{ dovecot_first_valid_uid | string }}"
+  - "{{ dovecot_last_valid_uid | string }}"
+  - "{{ dovecot_first_valid_gid | string }}"
+  - "{{ dovecot_last_valid_gid | string }}"

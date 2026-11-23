@@ -1,0 +1,20 @@
+---
+# role: dovecot
+# file: vars/AlmaLinux.yml
+
+__dovecot_packages:
+  - 'dovecot >= 2:2.4'
+  - dovecot-lmtpd
+__dovecot_imap_packages:
+  - dovecot-imapd
+__dovecot_sieve_packages:
+  - dovecot-sieve
+  - dovecot-managesieved
+__dovecot_validate_config: /usr/bin/doveconf -c %s -n
+__dovecot_nologin: /usr/sbin/nologin
+__dovecot_gssapi_packages: ['dovecot-gssapi']
+__dovecot_ldap_packages: ['dovecot-ldap']
+__dovecot_sql_packages:
+  mysql: ['dovecot-mysql']
+  pgsql: ['dovecot-pgsql']
+__dovecot_selinux_packages: [policycoreutils-python-utils]

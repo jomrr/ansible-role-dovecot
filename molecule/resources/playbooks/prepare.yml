@@ -102,11 +102,7 @@
   hosts: dovecot_dc
   gather_facts: true
   module_defaults:
-    group/jomrr.samba.all:
-      server: dc-dovecot.mail.test
-      realm: MAIL.TEST
-      bind_username: Administrator
-      bind_password: "{{ __dovecot_ad_admin_password }}"
+    group/jomrr.samba.all: "{{ __dovecot_directory_admin }}"
   tasks:
 
     - name: DOVECOT | Prepare the domain controller fixture

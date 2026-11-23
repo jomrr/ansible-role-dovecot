@@ -76,6 +76,7 @@
     - {name: disabled, uid: 70104}
     - {name: local, uid: 70105}
     - {name: ldap-reader, uid: 70106}
+    - {name: sender, uid: 70107}
   loop_control:
     loop_var: __dovecot_account
     label: "{{ __dovecot_account.name }}"
@@ -84,7 +85,7 @@
 - name: DOVECOT | Define directory-managed mailbox eligibility
   jomrr.samba.samba_group:
     name: MailUsers
-    members: [ad, disabled]
+    members: [disabled]
 
 - name: DOVECOT | Create dedicated service identities for the test mail servers
   jomrr.samba.samba_user:
@@ -131,3 +132,29 @@
     label: "{{ __dovecot_service | join('/') }}"
   changed_when: true
   no_log: true
+
+- name: DOVECOT | Install the standalone SMTP test receiver
+  become: true
+  become_user: root
+  ansible.builtin.apt:
+    name: postfix
+    state: present
+    policy_rc_d: 101
+
+- name: DOVECOT | Capture outgoing mail on the independent fixture host
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - systemd-run
+      - --unit=dovecot-test-smtp-sink
+      - --collect
+      - --property=User=nobody
+      - --property=RuntimeDirectory=dovecot-test-smtp
+      - --property=RuntimeDirectoryMode=0700
+      - /usr/sbin/smtp-sink
+      - -D
+      - /run/dovecot-test-smtp/messages
+      - "inet:{{ ansible_facts.default_ipv4.address }}:10026"
+      - '16'
+    creates: /run/dovecot-test-smtp

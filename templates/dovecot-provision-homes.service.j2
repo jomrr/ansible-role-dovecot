@@ -1,0 +1,18 @@
+# Managed by ansible.
+# file: {{ template_destpath }}
+[Unit]
+Description=Provision private Dovecot mailbox homes
+After=dovecot.service
+Requires=dovecot.service
+
+[Service]
+Type=oneshot
+ExecStart={{ __dovecot_home_args | join(' ') }}
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={{ dovecot_mail_root }}
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true

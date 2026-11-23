@@ -7,16 +7,17 @@
     that:
       - dovecot_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
       - dovecot_postmaster_address is match('^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+$')
-      - dovecot_mail_root is match('^/[^\s:"{}]+$')
+      - dovecot_mail_root is match('^/([a-zA-Z0-9._@+-]+/)*[a-zA-Z0-9._@+-]+$')
       - "'..' not in dovecot_mail_root.split('/')"
-      - dovecot_mail_root.split('/') | difference(['', '.']) | length > 0
+      - "'.' not in dovecot_mail_root.split('/')"
       - dovecot_lmtp_socket != dovecot_auth_socket
       - dovecot_lmtp_socket is match('^/[^\s"{}]+$')
       - dovecot_auth_socket is match('^/[^\s"{}]+$')
       - dovecot_listen | length > 0
       - dovecot_sieve_max_redirects >= 0
+      - dovecot_sieve_extensions | reject('match', '^[a-z0-9][a-z0-9_.;-]*$') | list | length == 0
       - not dovecot_managesieve_enabled or dovecot_sieve_enabled
-      - dovecot_sieve_enabled or dovecot_sieve_before | length == 0
+      - dovecot_sieve_enabled or (__dovecot_sieve_scripts.values() | select | list | length == 0)
       - dovecot_users | map(attribute='name') | unique | length == dovecot_users | length
       - dovecot_sasl_users | map(attribute='name') | unique | length == dovecot_sasl_users | length
       - dovecot_users | map(attribute='name') | intersect(dovecot_sasl_users | map(attribute='name')) | length == 0
@@ -119,14 +120,14 @@
     quiet: true
   when: dovecot_gssapi_enabled
 
-- name: DOVECOT | Require a TLS-verified SQL connection and explicit lookup queries
+- name: DOVECOT | Require a local socket or a TLS-verified SQL host and explicit queries
   ansible.builtin.assert:
     that:
-      - dovecot_sql.host is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
+      - dovecot_sql.host is match('^([a-zA-Z0-9][a-zA-Z0-9.-]*|/([a-zA-Z0-9_@.-]+/)*[a-zA-Z0-9_@.-]+)$')
       - dovecot_sql.port > 0 and dovecot_sql.port < 65536
       - dovecot_sql.database is match('^[a-zA-Z0-9_-]+$')
       - dovecot_sql.username is match('^[a-zA-Z0-9_.@-]+$')
-      - dovecot_sql.ca_file is match('^/[^\s\x27"{}]+$')
+      - dovecot_sql.host.startswith('/') or dovecot_sql.ca_file | default('') is match('^/[^\s\x27"{}]+$')
       - dovecot_sql.password_query | length > 0 or dovecot_sql.user_query | length > 0
       - dovecot_sql.password_query is not search('[\r\n]')
       - dovecot_sql.user_query is not search('[\r\n]')
@@ -137,8 +138,8 @@
 - name: DOVECOT | Validate SQL credential serialization
   ansible.builtin.assert:
     that:
-      - dovecot_sql.password | length > 0
-      - dovecot_sql.password is not search('[\r\n]')
+      - dovecot_sql.host.startswith('/') or dovecot_sql.password | default('') | length > 0
+      - dovecot_sql.password | default('') is not search('[\r\n]')
     quiet: true
   when: dovecot_sql_enabled
   no_log: true
@@ -166,3 +167,72 @@
     loop_var: __dovecot_uri
     label: "{{ __dovecot_uri }}"
   when: dovecot_ldap_enabled
+
+- name: DOVECOT | Require mailbox enumeration for managed external homes
+  ansible.builtin.assert:
+    that:
+      - not dovecot_sql_enabled or not dovecot_sql.user_query or dovecot_sql.iterate_query | length > 0
+      - not dovecot_ldap_enabled or (dovecot_ldap.iterate_filter | length > 0 and dovecot_ldap.iterate_user | length > 0)
+      - dovecot_home_provisioning != 'timer' or dovecot_home_interval > 0
+    fail_msg: Supply an enumeration of eligible mailboxes or select external home provisioning with none.
+    quiet: true
+  when: __dovecot_provision
+
+- name: DOVECOT | Validate service endpoints and quotas
+  ansible.builtin.assert:
+    that:
+      - 0 < dovecot_imaps_port <= 65535 and 0 < dovecot_managesieve_port <= 65535
+      - dovecot_quota_storage_size >= 0 and dovecot_quota_grace >= 0
+      - not (dovecot_quota_status_enabled or dovecot_quota_warning_thresholds) or dovecot_quota_enabled
+      - dovecot_quota_status_socket is match('^/[a-zA-Z0-9._/-]+$')
+      - dovecot_quota_status_socket not in [dovecot_auth_socket, dovecot_lmtp_socket]
+      - dovecot_mail_plugins | reject('match', '^[a-zA-Z0-9_-]+$') | list | length == 0
+      - dovecot_services.keys() | reject('match', '^[a-zA-Z0-9_-]+$') | list | length == 0
+      - dovecot_selinux_type is match('^[a-zA-Z0-9_]+_t$')
+      - dovecot_tls_sni | map(attribute='name') | unique | length == dovecot_tls_sni | length
+      - dovecot_auth_cache_size == 0 or dovecot_auth_cache_size >= 1024
+      - dovecot_submission_host is match('^([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])(:[0-9]{1,5})?$') or not dovecot_submission_host
+      - dovecot_users | selectattr('quota_storage_size', 'defined') | map(attribute='quota_storage_size') | select('lt', 0) | list | length == 0
+    quiet: true
+
+- name: DOVECOT | Validate additional server names and certificate paths
+  ansible.builtin.assert:
+    that:
+      - __dovecot_cert.name is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
+      - __dovecot_cert.certificate is match('^/[^\s"{}]+$')
+      - __dovecot_cert.private_key is match('^/[^\s"{}]+$')
+    quiet: true
+  loop: "{{ dovecot_tls_sni }}"
+  loop_control:
+    loop_var: __dovecot_cert
+    label: "{{ __dovecot_cert.name }}"
+
+- name: DOVECOT | Validate native service setting names
+  ansible.builtin.assert:
+    that:
+      - __dovecot_service.value is mapping
+      - __dovecot_service.value.keys() | reject('match', '^[a-z0-9_]+$') | list | length == 0
+    quiet: true
+  loop: "{{ dovecot_services | dict2items }}"
+  loop_control:
+    loop_var: __dovecot_service
+    label: "{{ __dovecot_service.key }}"
+
+- name: DOVECOT | Require a dedicated unprivileged quota warning service
+  ansible.builtin.assert:
+    that:
+      - dovecot_quota_warning_program is match('^/[a-zA-Z0-9._/-]+$')
+      - dovecot_quota_warning_user is match('^[a-z_][a-z0-9_-]*$') and dovecot_quota_warning_user != 'root'
+      - dovecot_quota_warning_thresholds | min >= 1 and dovecot_quota_warning_thresholds | max <= 100
+      - dovecot_quota_warning_thresholds | unique | length == dovecot_quota_warning_thresholds | length
+    quiet: true
+  when: dovecot_quota_warning_thresholds | length > 0
+
+- name: DOVECOT | Resolve the quota warning service UID
+  ansible.builtin.command:
+    argv: [id, -u, "{{ dovecot_quota_warning_user }}"]
+  register: __dovecot_warning_uid
+  changed_when: false
+  check_mode: false
+  failed_when: __dovecot_warning_uid.rc != 0 or __dovecot_warning_uid.stdout | int == 0
+  when: dovecot_quota_warning_thresholds | length > 0

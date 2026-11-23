@@ -1,0 +1,76 @@
+---
+# role: dovecot
+# file: tasks/storage.yml
+
+- name: DOVECOT | Create the mailbox group
+  become: true
+  become_user: root
+  ansible.builtin.group:
+    name: "{{ dovecot_mail_group }}"
+    gid: "{{ dovecot_mail_gid }}"
+    system: true
+  when: dovecot_mail_ownership == 'shared'
+
+- name: DOVECOT | Create the mailbox storage account
+  become: true
+  become_user: root
+  ansible.builtin.user:
+    name: "{{ dovecot_mail_user }}"
+    uid: "{{ dovecot_mail_uid }}"
+    group: "{{ dovecot_mail_group }}"
+    home: "{{ dovecot_mail_root }}"
+    create_home: false
+    shell: "{{ __dovecot_nologin }}"
+    password_lock: true
+    system: true
+  when: dovecot_mail_ownership == 'shared'
+
+- name: DOVECOT | Inspect the parent before enabling per-user storage
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: "{{ dovecot_mail_root }}"
+    get_checksum: false
+    get_mime: false
+  register: __dovecot_storage_root
+  when: dovecot_mail_ownership == 'per_user'
+
+- name: DOVECOT | Require a trusted parent before provisioning mailbox homes
+  ansible.builtin.assert:
+    that:
+      - >-
+        not __dovecot_storage_root.stat.exists or
+        (__dovecot_storage_root.stat.isdir and __dovecot_storage_root.stat.uid == 0
+         and not __dovecot_storage_root.stat.wgrp and not __dovecot_storage_root.stat.woth)
+    fail_msg: Prepare a root-owned private storage tree or select shared ownership for an existing vmail deployment.
+  when: dovecot_mail_ownership == 'per_user'
+
+- name: DOVECOT | Create the mailbox root
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ dovecot_mail_root }}"
+    state: directory
+    owner: "{{ 'root' if dovecot_mail_ownership == 'per_user' else dovecot_mail_user }}"
+    group: "{{ 'root' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
+    mode: "{{ '0711' if dovecot_mail_ownership == 'per_user' else '0700' }}"
+
+- name: DOVECOT | Configure the mailbox SELinux context
+  ansible.builtin.import_tasks: selinux.yml
+  when: ansible_facts.selinux.status | default('disabled') == 'enabled'
+
+- name: DOVECOT | Create private mailbox homes
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ dovecot_mail_root }}/{{ __dovecot_mailbox.name }}"
+    state: directory
+    owner: "{{ __dovecot_mailbox.uid | default(dovecot_mail_uid) | string }}"
+    group: "{{ __dovecot_mailbox.gid | default(dovecot_mail_gid) | string }}"
+    mode: '0700'
+    follow: false
+  loop: "{{ __dovecot_mailbox_metadata }}"
+  loop_control:
+    loop_var: __dovecot_mailbox
+    label: "{{ __dovecot_mailbox.name }}"
+  when: not __dovecot_provision

@@ -13,3 +13,4 @@ __dovecot_ldap_packages: []
 __dovecot_sql_packages:
   mysql: ['dovecot24-backend-mysql']
   pgsql: ['dovecot24-backend-pgsql']
+__dovecot_selinux_packages: [policycoreutils, policycoreutils-python-utils]

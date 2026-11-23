@@ -1,0 +1,68 @@
+{% if dovecot_lmtp_enabled %}
+service lmtp {
+  unix_listener {{ dovecot_lmtp_socket }} {
+    mode = 0600
+    user = {{ dovecot_socket_user | to_json }}
+    group = {{ dovecot_socket_group | to_json }}
+  }
+  inet_listener lmtp {
+    port = 0
+  }
+}
+{% endif %}
+service auth {
+{% if dovecot_postfix_auth_enabled %}
+  unix_listener {{ dovecot_auth_socket }} {
+    mode = 0600
+    user = {{ dovecot_socket_user | to_json }}
+    group = {{ dovecot_socket_group | to_json }}
+  }
+{% endif %}
+}
+{% if dovecot_imap_enabled %}
+service imap-login {
+  inet_listener imap {
+    port = 0
+  }
+  inet_listener imaps {
+    port = {{ dovecot_imaps_port }}
+{% if dovecot_imap_addresses %}
+    listen = {{ dovecot_imap_addresses | join(', ') | to_json }}
+{% endif %}
+    ssl = yes
+  }
+}
+{% endif %}
+{% if dovecot_managesieve_enabled %}
+service managesieve-login {
+  inet_listener sieve {
+    port = {{ dovecot_managesieve_port }}
+{% if dovecot_managesieve_addresses %}
+    listen = {{ dovecot_managesieve_addresses | join(', ') | to_json }}
+{% endif %}
+  }
+}
+{% endif %}
+
+{% if dovecot_imap_enabled %}
+protocol imap {
+{% if dovecot_imap_max_userip_connections is not none %}
+  mail_max_userip_connections = {{ dovecot_imap_max_userip_connections }}
+{% endif %}
+{% if dovecot_imap_idle_notify_interval is not none %}
+  imap_idle_notify_interval = {{ dovecot_imap_idle_notify_interval }}s
+{% endif %}
+{% if dovecot_quota_enabled %}
+  mail_plugins {
+    imap_quota = yes
+  }
+{% endif %}
+}
+{% endif %}
+{% for service, settings in dovecot_services.items() %}
+service {{ service }} {
+{% for setting, value in settings.items() %}
+  {{ setting }} = {{ value | string | to_json }}
+{% endfor %}
+}
+{% endfor %}

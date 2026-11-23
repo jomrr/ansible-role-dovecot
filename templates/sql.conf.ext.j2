@@ -1,16 +1,19 @@
 # Managed by ansible.
 # file: {{ template_destpath }}
-{% if __dovecot_version.stdout is version('2.4', '>=') %}
 {% if dovecot_sql.driver == 'mysql' %}
 mysql {{ dovecot_sql.host }} {
   port = {{ dovecot_sql.port }}
   dbname = {{ dovecot_sql.database | to_json(ensure_ascii=False) }}
   user = {{ dovecot_sql.username | to_json(ensure_ascii=False) }}
+{% if dovecot_sql.password | default('') %}
   password = {{ dovecot_sql.password | to_json(ensure_ascii=False) }}
+{% endif %}
+{% if not dovecot_sql.host.startswith('/') %}
   ssl = yes
   ssl_cipher_list = HIGH
   ssl_client_ca_file = {{ dovecot_sql.ca_file | to_json(ensure_ascii=False) }}
   ssl_client_require_valid_cert = yes
+{% endif %}
 }
 {% else %}
 pgsql {{ dovecot_sql.host }} {
@@ -19,9 +22,13 @@ pgsql {{ dovecot_sql.host }} {
     port = {{ dovecot_sql.port }}
     dbname = {{ dovecot_sql.database | to_json(ensure_ascii=False) }}
     user = {{ dovecot_sql.username | to_json(ensure_ascii=False) }}
+{% if dovecot_sql.password | default('') %}
     password = {{ dovecot_sql.password | to_json(ensure_ascii=False) }}
+{% endif %}
+{% if not dovecot_sql.host.startswith('/') %}
     sslmode = verify-full
     sslrootcert = {{ dovecot_sql.ca_file | to_json(ensure_ascii=False) }}
+{% endif %}
   }
 }
 {% endif %}
@@ -53,18 +60,4 @@ userdb sql {
 {% endif %}
   result_internalfail = return-fail
 }
-{% endif %}
-{% else %}
-driver = {{ dovecot_sql.driver }}
-{% if dovecot_sql.driver == 'mysql' %}
-{% set __dovecot_connection = 'host=' ~ dovecot_sql.host ~ ' port=' ~ dovecot_sql.port ~ ' dbname=' ~ dovecot_sql.database ~ ' user=' ~ dovecot_sql.username ~ ' password=' ~ dovecot_sql.password ~ ' ssl_ca=' ~ dovecot_sql.ca_file ~ ' ssl_verify_server_cert=yes' %}
-{% else %}
-{% set __dovecot_connection = "host='" ~ dovecot_sql.host ~ "' port=" ~ dovecot_sql.port ~ " dbname='" ~ dovecot_sql.database ~ "' user='" ~ dovecot_sql.username ~ "' password='" ~ dovecot_sql.password | replace('\\', '\\\\') | replace("'", "\\'") ~ "' sslmode=verify-full sslrootcert='" ~ dovecot_sql.ca_file ~ "'" %}
-{% endif %}
-connect = {{ __dovecot_connection | to_json(ensure_ascii=False) }}
-
-default_pass_scheme = SHA512-CRYPT
-password_query = {{ dovecot_sql.password_query }}
-user_query = {{ dovecot_sql.user_query }}
-iterate_query = {{ dovecot_sql.iterate_query }}
 {% endif %}

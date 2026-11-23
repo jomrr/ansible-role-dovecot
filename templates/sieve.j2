@@ -1,0 +1,28 @@
+{% if dovecot_sieve_enabled %}
+{% if dovecot_lmtp_enabled %}
+protocol lmtp {
+  mail_plugins {
+    sieve = yes
+  }
+}
+{% endif %}
+sieve_script personal {
+  driver = file
+  path = ~/sieve
+  active_path = ~/.dovecot.sieve
+}
+{% for type, source in __dovecot_sieve_scripts.items() if source %}
+sieve_script {{ type }} {
+  type = {{ type }}
+  driver = file
+  path = /etc/dovecot/sieve-{{ type }}.sieve
+}
+{% endfor %}
+{% if dovecot_sieve_extensions %}
+sieve_extensions = {{ dovecot_sieve_extensions | join(' ') | to_json }}
+{% endif %}
+sieve_max_redirects = {{ dovecot_sieve_max_redirects }}
+sieve_max_script_size = {{ dovecot_sieve_max_script_size }}B
+sieve_quota_script_count = {{ dovecot_sieve_quota_script_count }}
+sieve_quota_storage_size = {{ dovecot_sieve_quota_storage_size }}B
+{% endif %}

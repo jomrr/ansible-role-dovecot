@@ -120,7 +120,7 @@
     name: systemd-user-sessions.service
     state: started
 
-- name: DOVECOT | Provision external mailbox homes before enabling their userdb records
+- name: DOVECOT | Provide writable homes only for deliberately invalid test records
   become: true
   become_user: root
   ansible.builtin.file:
@@ -131,9 +131,6 @@
     mode: "{{ __dovecot_home.mode | default('0700') }}"
   loop:
     - {name: '', uid: 0, gid: 0, mode: '0711'}
-    - {name: ad@mail.test, uid: 70101, gid: 70100}
-    - {name: adsql@mail.test, uid: 70102, gid: 70100}
-    - {name: local@mail.test, uid: 70201, gid: 70100}
     - {name: baduid@mail.test, uid: 69999, gid: 70100}
     - {name: badgid@mail.test, uid: 70204, gid: 69999}
   loop_control:

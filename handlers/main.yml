@@ -2,37 +2,36 @@
 # role: dovecot
 # file: handlers/main.yml
 
-- name: DOVECOT | Compile the administrator Sieve script
-  become: true
-  become_user: root
-  ansible.builtin.command:
-    argv: [sievec, -c, /etc/dovecot/dovecot.conf, /etc/dovecot/sieve-before.sieve]
-  changed_when: true
-  listen: compile sieve
-
-- name: DOVECOT | Protect the compiled Sieve script
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: /etc/dovecot/sieve-before.svbin
-    owner: root
-    group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
-    mode: '0640'
-  listen: compile sieve
-
-- name: DOVECOT | Validate the complete configuration before stopping the running service
+- name: DOVECOT | Validate the complete configuration before reload
   become: true
   become_user: root
   ansible.builtin.command:
     cmd: "{{ __dovecot_validate_config | replace('%s', '/etc/dovecot/dovecot.conf') }}"
   changed_when: false
   no_log: true
-  listen: restart dovecot
+  listen: reload dovecot
 
-- name: DOVECOT | Restart delivery with validated configuration
+- name: DOVECOT | Reload the validated delivery configuration
+  become: true
+  become_user: root
+  ansible.builtin.service:
+    name: dovecot
+    state: reloaded
+  when: not __dovecot_installed_packages.changed
+  listen: reload dovecot
+
+- name: DOVECOT | Start a new master to load installed plugin schemas
   become: true
   become_user: root
   ansible.builtin.service:
     name: dovecot
     state: restarted
-  listen: restart dovecot
+  when: __dovecot_installed_packages.changed
+  listen: reload dovecot
+
+- name: DOVECOT | Reload systemd after provisioning unit changes
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  listen: reload systemd

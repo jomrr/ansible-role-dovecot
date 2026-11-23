@@ -3,23 +3,34 @@
 # file: molecule/resources/playbooks/side_effect.yml
 
 
-- name: DOVECOT | Introduce configuration and account drift
+- name: DOVECOT | Grant a newly entitled mailbox in AD
+  hosts: dovecot_dc
+  gather_facts: false
+  module_defaults:
+    group/jomrr.samba.all: "{{ __dovecot_directory_admin }}"
+  tasks:
+
+    - name: DOVECOT | Add the mailbox account to its entitlement group
+      jomrr.samba.samba_group:
+        name: MailUsers
+        members: [ad, disabled]
+
+- name: DOVECOT | Activate a new file-backed mailbox
   hosts: dovecot_servers
   gather_facts: false
   tasks:
-    - name: DOVECOT | Change the deployed hostname
+    - name: DOVECOT | Open an authenticated IMAP session across the next convergence
       become: true
       become_user: root
-      ansible.builtin.lineinfile:
-        path: /etc/dovecot/dovecot.conf
-        regexp: '^hostname ='
-        line: hostname = drift.example.test
+      ansible.builtin.script:
+        cmd: ../tests/verify_policy.py open
+        executable: python3
+      changed_when: false
 
-    - name: DOVECOT | Disable an account in the deployed database
+    - name: DOVECOT | Enable the new file account in the test inventory
       become: true
       become_user: root
-      ansible.builtin.lineinfile:
-        path: /etc/dovecot/users
-        regexp: '^maildir@example.test:'
-        state: absent
-      no_log: true
+      ansible.builtin.copy:
+        dest: /run/dovecot-test-file-account
+        content: "maildir@example.test\n"
+        mode: '0600'
