@@ -1,9 +1,9 @@
 # Managed by ansible.
 # file: {{ template_destpath }}
 {% for __dovecot_account in dovecot_users %}
-{% if __dovecot_version.stdout is version('2.4', '>=') %}
-{{ __dovecot_account.name }}:{{ __dovecot_account.password_hash }}:{{ dovecot_mail_uid }}:{{ dovecot_mail_gid }}::{{ dovecot_mail_root }}/{{ __dovecot_account.name }}::userdb_mail_driver={{ __dovecot_account.mail_format | default(dovecot_mail_format) }} userdb_mail_inbox_path={{ '~/inbox' if __dovecot_account.mail_format | default(dovecot_mail_format) == 'mbox' else '~/mail' }}
+{{ __dovecot_account.name }}:{{ __dovecot_account.password_hash }}:{{ __dovecot_account.uid | default(dovecot_mail_uid) }}:{{ __dovecot_account.gid | default(dovecot_mail_gid) }}::{{ dovecot_mail_root }}/{{ __dovecot_account.name }}::{% if __dovecot_version.stdout is version('2.4', '>=') %}
+userdb_mail_driver={{ __dovecot_account.mail_format | default(dovecot_mail_format) }} userdb_mail_inbox_path={{ '~/inbox' if __dovecot_account.mail_format | default(dovecot_mail_format) == 'mbox' else '~/mail' }}
 {% else %}
-{{ __dovecot_account.name }}:{{ __dovecot_account.password_hash }}:{{ dovecot_mail_uid }}:{{ dovecot_mail_gid }}::{{ dovecot_mail_root }}/{{ __dovecot_account.name }}::userdb_mail={{ __dovecot_account.mail_format | default(dovecot_mail_format) }}:~/mail{{ ':INBOX=~/inbox' if __dovecot_account.mail_format | default(dovecot_mail_format) == 'mbox' else '' }}
+userdb_mail={{ __dovecot_account.mail_format | default(dovecot_mail_format) }}:~/mail{{ ':INBOX=~/inbox' if __dovecot_account.mail_format | default(dovecot_mail_format) == 'mbox' else '' }}
 {% endif %}
 {% endfor %}

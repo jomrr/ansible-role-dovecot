@@ -9,7 +9,7 @@
     src: sieve-before.sieve.j2
     dest: /etc/dovecot/sieve-before.sieve
     owner: root
-    group: "{{ dovecot_mail_group }}"
+    group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
     mode: '0640'
     validate: /usr/bin/sievec -c /etc/dovecot/dovecot.conf %s
   when: dovecot_sieve_before | length > 0

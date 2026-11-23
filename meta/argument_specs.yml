@@ -28,21 +28,44 @@ argument_specs:
         type: str
         description: Parent directory for virtual mailbox homes.
         default: /var/vmail
+      dovecot_mail_ownership:
+        type: str
+        description: Mailbox ownership policy for delivery and client processes.
+        choices:
+          - per_user
+          - shared
+        default: per_user
+      dovecot_first_valid_uid:
+        type: int
+        default: 70000
+        description: Inclusive lower bound for per-user mailbox UIDs.
+      dovecot_last_valid_uid:
+        type: int
+        default: 99999
+        description: Inclusive upper bound for per-user mailbox UIDs.
+      dovecot_first_valid_gid:
+        type: int
+        default: 70000
+        description: Inclusive lower bound for per-user mailbox GIDs.
+      dovecot_last_valid_gid:
+        type: int
+        default: 99999
+        description: Inclusive upper bound for per-user mailbox GIDs.
       dovecot_mail_user:
         type: str
-        description: Unprivileged system account owning virtual mailboxes.
+        description: Unprivileged mailbox account in shared mode.
         default: vmail
       dovecot_mail_group:
         type: str
-        description: System group owning virtual mailboxes.
+        description: Mailbox group in shared mode.
         default: vmail
       dovecot_mail_uid:
         type: int
-        description: Numeric UID reserved for virtual mailbox storage.
+        description: Numeric mailbox UID in shared mode.
         default: 5000
       dovecot_mail_gid:
         type: int
-        description: Numeric GID reserved for virtual mailbox storage.
+        description: Numeric mailbox GID in shared mode.
         default: 5000
       dovecot_users:
         type: list
@@ -61,6 +84,12 @@ argument_specs:
             no_log: true
             description: Dovecot SHA512-CRYPT, BLF-CRYPT or ARGON2ID hash; * disables the
               file password.
+          uid:
+            type: int
+            description: Stable unique mailbox UID, required in per_user mode.
+          gid:
+            type: int
+            description: Mailbox primary GID, required in per_user mode.
           mail_format:
             type: str
             choices:

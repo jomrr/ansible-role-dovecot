@@ -1,0 +1,6 @@
+---
+# role: dovecot
+# file: vars/main.yml
+
+# Keep password hashes out of ownership assertions and filesystem module results.
+__dovecot_mailbox_metadata: "{{ dovecot_users | map('combine', {'password_hash': ''}) | list }}"

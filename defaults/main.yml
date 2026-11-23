@@ -15,16 +15,32 @@ dovecot_mail_format: maildir
 # Parent directory for virtual mailbox homes.
 dovecot_mail_root: /var/vmail
 
-# Unprivileged system account owning virtual mailboxes.
+# Mailbox ownership policy for delivery and client processes.
+# Choices: per_user, shared
+dovecot_mail_ownership: per_user
+
+# Inclusive lower bound for per-user mailbox UIDs.
+dovecot_first_valid_uid: 70000
+
+# Inclusive upper bound for per-user mailbox UIDs.
+dovecot_last_valid_uid: 99999
+
+# Inclusive lower bound for per-user mailbox GIDs.
+dovecot_first_valid_gid: 70000
+
+# Inclusive upper bound for per-user mailbox GIDs.
+dovecot_last_valid_gid: 99999
+
+# Unprivileged mailbox account in shared mode.
 dovecot_mail_user: vmail
 
-# System group owning virtual mailboxes.
+# Mailbox group in shared mode.
 dovecot_mail_group: vmail
 
-# Numeric UID reserved for virtual mailbox storage.
+# Numeric mailbox UID in shared mode.
 dovecot_mail_uid: 5000
 
-# Numeric GID reserved for virtual mailbox storage.
+# Numeric mailbox GID in shared mode.
 dovecot_mail_gid: 5000
 
 # File-backed virtual accounts; removing an account preserves its stored mail.

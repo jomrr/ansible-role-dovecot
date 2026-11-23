@@ -16,7 +16,7 @@
   ansible.builtin.file:
     path: /etc/dovecot/sieve-before.svbin
     owner: root
-    group: "{{ dovecot_mail_group }}"
+    group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
     mode: '0640'
   listen: compile sieve
 

@@ -28,8 +28,8 @@
     regexp: "{{ __dovecot_bound.regexp }}"
     replace: "{{ __dovecot_bound.value }}"
   loop:
-    - {regexp: '^lowerBound: .*', value: 'lowerBound: 10000'}
-    - {regexp: '^upperBound: .*', value: 'upperBound: 60000'}
+    - {regexp: '^lowerBound: .*', value: 'lowerBound: 65536'}
+    - {regexp: '^upperBound: .*', value: 'upperBound: 69999'}
   loop_control:
     loop_var: __dovecot_bound
     label: "{{ __dovecot_bound.value }}"
@@ -56,16 +56,29 @@
     mode: '0644'
     unsafe_writes: true
 
+- name: DOVECOT | Assign the POSIX primary group used by idmap ad
+  jomrr.samba.samba_group:
+    name: Domain Users
+    gid_number: 70100
+
 - name: DOVECOT | Create real AD authentication and directory lookup accounts
   jomrr.samba.samba_user:
-    username: "{{ __dovecot_account }}"
+    username: "{{ __dovecot_account.name }}"
+    uid_number: "{{ __dovecot_account.uid }}"
+    gid_number: 70100
     password: "{{ __dovecot_ad_user_password }}"
-    email: "{{ __dovecot_account }}@mail.test"
-    enabled: "{{ __dovecot_account != 'disabled' }}"
-  loop: [ad, adsql, outsider, disabled, local, ldap-reader]
+    email: "{{ __dovecot_account.name }}@mail.test"
+    enabled: "{{ __dovecot_account.name != 'disabled' }}"
+  loop:
+    - {name: ad, uid: 70101}
+    - {name: adsql, uid: 70102}
+    - {name: outsider, uid: 70103}
+    - {name: disabled, uid: 70104}
+    - {name: local, uid: 70105}
+    - {name: ldap-reader, uid: 70106}
   loop_control:
     loop_var: __dovecot_account
-    label: "{{ __dovecot_account }}"
+    label: "{{ __dovecot_account.name }}"
   no_log: true
 
 - name: DOVECOT | Define directory-managed mailbox eligibility

@@ -92,6 +92,8 @@
       ansible.builtin.include_role:
         name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
       vars:
+        dovecot_mail_ownership: shared
+        dovecot_mail_root: /var/vmail-shared
         dovecot_imap_enabled: false
         dovecot_managesieve_enabled: false
         dovecot_postfix_auth_enabled: false

@@ -29,10 +29,7 @@
     samba_ad_member_server: dc-dovecot.mail.test
     samba_ad_member_join_password: "{{ __dovecot_ad_admin_password }}"
     samba_ad_member_netbios_name: "{{ inventory_hostname | upper }}"
-    samba_ad_member_idmap_backend: rid
     samba_ad_member_winbind_use_default_domain: true
-    samba_ad_member_idmap_range: 10000-39999
-    samba_ad_member_idmap_default_range: 40000-59999
     samba_ad_member_pam_winbind_options:
       krb5_auth: true
       cached_login: false
@@ -122,3 +119,23 @@
   ansible.builtin.systemd_service:
     name: systemd-user-sessions.service
     state: started
+
+- name: DOVECOT | Provision external mailbox homes before enabling their userdb records
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "/var/vmail/{{ __dovecot_home.name }}"
+    state: directory
+    owner: "{{ __dovecot_home.uid | string }}"
+    group: "{{ __dovecot_home.gid | string }}"
+    mode: "{{ __dovecot_home.mode | default('0700') }}"
+  loop:
+    - {name: '', uid: 0, gid: 0, mode: '0711'}
+    - {name: ad@mail.test, uid: 70101, gid: 70100}
+    - {name: adsql@mail.test, uid: 70102, gid: 70100}
+    - {name: local@mail.test, uid: 70201, gid: 70100}
+    - {name: baduid@mail.test, uid: 69999, gid: 70100}
+    - {name: badgid@mail.test, uid: 70204, gid: 69999}
+  loop_control:
+    loop_var: __dovecot_home
+    label: "{{ __dovecot_home.name }}"

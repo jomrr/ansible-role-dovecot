@@ -28,6 +28,11 @@ AUTH_PATH = '/var/spool/postfix/private/auth'
 MAIL_ROOT = Path('/var/vmail')
 
 
+def maildir_message(home: Path) -> Path:
+    """Find a delivered message before or after IMAP has selected the mailbox."""
+    return next(path for folder in ('cur', 'new') for path in (home / 'mail' / folder).iterdir())
+
+
 def tls_context() -> ssl.SSLContext:
     """Trust only the scenario's certificate and verify the endpoint name."""
     return ssl.create_default_context(cafile='/etc/dovecot-test/server.pem')
@@ -86,10 +91,19 @@ class SecurityTests(unittest.TestCase):
         metadata = Path(LMTP_PATH).stat()
         self.assertEqual(stat.S_IMODE(metadata.st_mode), 0o600)
         self.assertEqual(metadata.st_uid, pwd.getpwnam('postfix').pw_uid)
-        self.assertEqual(stat.S_IMODE(MAIL_ROOT.stat().st_mode), 0o700)
+        root = MAIL_ROOT.stat()
+        self.assertEqual((root.st_uid, stat.S_IMODE(root.st_mode)), (0, 0o711))
         self.assertEqual(stat.S_IMODE(Path(AUTH_PATH).stat().st_mode), 0o600)
         for filename in ('users', 'sasl-users', 'sql.conf.ext', 'ldap.conf.ext'):
             self.assertEqual(stat.S_IMODE((Path('/etc/dovecot') / filename).stat().st_mode), 0o640)
+
+    def test_out_of_range_delivery(self) -> None:
+        """Even an active SQL record with a writable home must pass both ID bounds."""
+        for address in ('baduid@mail.test', 'badgid@mail.test'):
+            with self.subTest(address=address):
+                with self.assertRaises((smtplib.SMTPRecipientsRefused, smtplib.SMTPDataError)):
+                    deliver(address)
+                self.assertFalse(list((MAIL_ROOT / address).iterdir()))
 
     def test_no_plaintext_imap_or_network_lmtp(self) -> None:
         """Unrequested network protocols cannot accept connections."""
@@ -116,7 +130,7 @@ class ClientTests(unittest.TestCase):
 
     def test_all_storage_formats(self) -> None:
         """LMTP delivery and IMAPS retrieval work for every promised format."""
-        for storage in FORMATS:
+        for uid, storage in enumerate(FORMATS, start=70001):
             recipient = f'{storage}@example.test'
             with self.subTest(storage=storage):
                 message_id = deliver(recipient)
@@ -127,8 +141,16 @@ class ClientTests(unittest.TestCase):
                     self.assertEqual(status, 'OK')
                     self.assertTrue(messages[0])
                 home = MAIL_ROOT / recipient
+                self.assertEqual(stat.S_IMODE(home.stat().st_mode), 0o700)
+                self.assertEqual((home.stat().st_uid, home.stat().st_gid), (uid, 70000))
                 if storage == 'maildir':
-                    self.assertTrue((home / 'mail/cur').is_dir())
+                    message = maildir_message(home)
+                    self.assertEqual((message.stat().st_uid, message.stat().st_gid), (uid, 70000))
+                    denied = subprocess.run(
+                        ['test', '-r', str(message)], user=70002, group=70000,
+                        extra_groups=[], check=False,
+                    )
+                    self.assertEqual(denied.returncode, 1)
                 elif storage == 'mbox':
                     self.assertTrue((home / 'inbox').is_file())
                 elif storage == 'sdbox':
@@ -240,9 +262,15 @@ class IdentityTests(unittest.TestCase):
 
     def test_directory_password_login(self) -> None:
         """Winbind validates the full UPN while LDAP supplies the mailbox."""
+        address = 'ad@mail.test'
+        message_id = deliver(address)
         with imap_client() as client:
-            client.login('ad@mail.test', AD_PASSWORD)
+            client.login(address, AD_PASSWORD)
             self.assertEqual(client.select('INBOX')[0], 'OK')
+            self.assertTrue(client.search(None, 'HEADER', 'Message-ID', message_id)[1][0])
+        home = MAIL_ROOT / address
+        message = home / 'inbox' if (home / 'inbox').is_file() else maildir_message(home)
+        self.assertEqual((message.stat().st_uid, message.stat().st_gid), (70101, 70100))
         workers = subprocess.run(
             ['pgrep', '-u', 'doveauth', '-x', 'auth'], check=True,
             capture_output=True, text=True,
@@ -418,6 +446,9 @@ class MdaTests(unittest.TestCase):
             deliver('maildir@example.test')
         self.assertEqual(failure.exception.recipients['maildir@example.test'][0], 550)
         message_id = deliver('delivery@example.test', 'spam')
+        shared = Path('/var/vmail-shared/delivery@example.test')
+        owner = pwd.getpwnam('vmail')
+        self.assertEqual((shared.stat().st_uid, shared.stat().st_gid), (owner.pw_uid, owner.pw_gid))
         self.assertTrue(search('delivery@example.test', 'INBOX', message_id))
 
 

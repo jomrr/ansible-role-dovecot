@@ -20,8 +20,8 @@ SSO can coexist with file, SQL and LDAP mailbox lookup.
 
 ### Managed
 
-- Distribution packages, a dedicated mailbox account, private mailbox homes and
-  file-backed mailbox and submission-only accounts.
+- Distribution packages, private homes for file-backed mailboxes, optional
+  shared storage ownership and submission-only accounts.
 - Dovecot main configuration, LMTP and Postfix SASL sockets, TLS-only client
   access and optional Sieve filtering.
 - Standard Drafts, Sent, Junk and Trash mailboxes with special-use flags.
@@ -119,11 +119,71 @@ Default:
 dovecot_mail_root: /var/vmail
 ```
 
+### `dovecot_mail_ownership`
+
+Type: `str`. Required: `false`.
+
+Mailbox ownership policy for delivery and client processes.
+
+Default:
+
+```yaml
+dovecot_mail_ownership: per_user
+```
+
+### `dovecot_first_valid_uid`
+
+Type: `int`. Required: `false`.
+
+Inclusive lower bound for per-user mailbox UIDs.
+
+Default:
+
+```yaml
+dovecot_first_valid_uid: 70000
+```
+
+### `dovecot_last_valid_uid`
+
+Type: `int`. Required: `false`.
+
+Inclusive upper bound for per-user mailbox UIDs.
+
+Default:
+
+```yaml
+dovecot_last_valid_uid: 99999
+```
+
+### `dovecot_first_valid_gid`
+
+Type: `int`. Required: `false`.
+
+Inclusive lower bound for per-user mailbox GIDs.
+
+Default:
+
+```yaml
+dovecot_first_valid_gid: 70000
+```
+
+### `dovecot_last_valid_gid`
+
+Type: `int`. Required: `false`.
+
+Inclusive upper bound for per-user mailbox GIDs.
+
+Default:
+
+```yaml
+dovecot_last_valid_gid: 99999
+```
+
 ### `dovecot_mail_user`
 
 Type: `str`. Required: `false`.
 
-Unprivileged system account owning virtual mailboxes.
+Unprivileged mailbox account in shared mode.
 
 Default:
 
@@ -135,7 +195,7 @@ dovecot_mail_user: vmail
 
 Type: `str`. Required: `false`.
 
-System group owning virtual mailboxes.
+Mailbox group in shared mode.
 
 Default:
 
@@ -147,7 +207,7 @@ dovecot_mail_group: vmail
 
 Type: `int`. Required: `false`.
 
-Numeric UID reserved for virtual mailbox storage.
+Numeric mailbox UID in shared mode.
 
 Default:
 
@@ -159,7 +219,7 @@ dovecot_mail_uid: 5000
 
 Type: `int`. Required: `false`.
 
-Numeric GID reserved for virtual mailbox storage.
+Numeric mailbox GID in shared mode.
 
 Default:
 
@@ -603,9 +663,17 @@ the running service untouched.
 - File identities are full lowercase addresses. Use SHA512-CRYPT, BLF-CRYPT or
   ARGON2ID hashes and protect them with Vault. A * disables the file password; a
   separate enabled PAM or GSSAPI mechanism can still authenticate that identity.
-- The shared vmail UID has no login shell, is restricted by first/last valid UID
-  and GID, and owns private storage. Virtual users share this Unix identity:
-  this is not filesystem isolation between hostile tenants.
+- Each mailbox has a distinct stable UID by default. Dovecot obtains uid and gid
+  from the matching userdb and bounds both IDs. Mode 0700 on each home prevents
+  a mailbox process from traversing another user's home, including when users
+  share a primary GID. The LMTP service starts privileged so it can switch to
+  the recipient's credentials for storage operations. The master, privileged
+  LMTP code and the sources that assign IDs are part of the trust boundary.
+- Reserve the configured intervals exclusively for mailbox identities across
+  file, SQL, LDAP and local accounts. Enforce UID uniqueness in the
+  authoritative allocation system and retain IDs until archived data can no
+  longer be accessed. With idmap ad, align the Winbind range with the published
+  uidNumber/gidNumber attributes and the Dovecot limits.
 - Sieve redirects are disabled by default to prevent unintended forwarding.
   Standard Sieve extensions are available; external-program plugins are not
   enabled. Personal scripts belong to users and are never overwritten by the
@@ -659,10 +727,27 @@ the running service untouched.
 
 ## Operational Notes
 
-- Each dovecot_users entry requires name and password_hash, with an optional
-  mail_format override. Formats are maildir, mbox, sdbox and mdbox. The default
-  is maildir. Homes are `<mail_root>/<name>`, mail is stored under ~/mail and
-  mbox INBOX under ~/inbox.
+- With dovecot_mail_ownership set to per_user (default), each dovecot_users
+  entry requires numeric uid and gid, name and password_hash. The optional
+  mail_format overrides the default. Formats are maildir, mbox, sdbox and mdbox.
+  The default is maildir. Homes are `<mail_root>/<name>`, mail is stored under
+  ~/mail and mbox INBOX under ~/inbox.
+- dovecot_first_valid_uid, dovecot_last_valid_uid, dovecot_first_valid_gid and
+  dovecot_last_valid_gid bound the respective IDs inclusively. Both intervals
+  default to 70000–99999. The role creates file-backed homes under a root-owned
+  directory with mode 0711. For SQL and LDAP mailboxes, have the account
+  provisioning system create the canonical home with the returned numeric
+  UID/GID and mode 0700 before enabling delivery. For SQL, return uid and gid
+  from a stable mapping, for example by joining a separate POSIX allocation
+  table.
+- Before upgrading a shared deployment, set dovecot_mail_ownership: shared to
+  retain its configured vmail account, IDs and directory layout. For migration
+  to per_user, back up mail and indexes, pause delivery and client access,
+  assign and verify IDs across all sources, and migrate the complete mailbox
+  trees including indexes and Sieve files offline. Secure the parent as
+  root:root mode 0711, verify each home as mode 0700 and check message ownership
+  before restarting. The role does not recursively change existing mail
+  ownership.
 - dbox is represented by sdbox (one message per file) and mdbox (multiple
   messages per file). Preserve indexes with dbox backups. Changing mail_format
   or mail_root does not migrate messages; plan a doveadm backup/sync migration
@@ -682,8 +767,8 @@ the running service untouched.
 - ManageSieve stores personal scripts under ~/sieve and activates them through
   ~/.dovecot.sieve. dovecot_sieve_before runs first; use stop after terminal
   actions when personal rules must not run. When enabling redirects or vacation
-  replies, authorize the vmail sendmail identity and outbound envelope addresses
-  in Postfix.
+  replies, authorize the submitting mailbox identities and outbound envelope
+  addresses in Postfix.
 - The role owns the complete main configuration and ignores packaged snippets.
   Review existing custom settings before adopting it. Configuration backups are
   optional; mailbox backups and certificate renewal with a Dovecot restart are
@@ -760,8 +845,12 @@ is disabled.
       dovecot_postmaster_address: postmaster@example.com
       dovecot_users:
         - name: alice@example.com
+          uid: 70001
+          gid: 70000
           password_hash: '*'
         - name: archive@example.com
+          uid: 70002
+          gid: 70000
           password_hash: '*'
           mail_format: mdbox
 ```
@@ -786,6 +875,8 @@ applying firewall and certificate policy.
       dovecot_tls_private_key: /etc/mail/tls/privkey.pem
       dovecot_users:
         - name: alice@example.com
+          uid: 70001
+          gid: 70000
           password_hash: "{{ vault_alice_dovecot_hash }}"
       dovecot_sieve_before: |
         require ["fileinto"];
@@ -813,8 +904,12 @@ dovecot_gssapi_hostname: mail.example.com
 dovecot_krb5_keytab: /etc/dovecot/service.keytab
 dovecot_users:
   - name: local@example.com
+    uid: 70003
+    gid: 70000
     password_hash: "{{ vault_local_mail_hash }}"
   - name: employee@example.com
+    uid: 70004
+    gid: 70000
     password_hash: '*'
 dovecot_sasl_users:
   - name: scanner@example.com
@@ -827,9 +922,12 @@ These queries use ordinary PostfixAdmin mailbox columns. They intentionally
 exclude unusable * passwords from the local password source while retaining
 active mailbox records for external authentication. Adjust the queries to the
 actual schema and account lifecycle. File users and LDAP can remain enabled
-concurrently.
+concurrently. This example selects shared storage for an unmodified
+PostfixAdmin schema. For isolated storage, join the user query to your
+POSIX ID mapping and provision each home before activation.
 
 ```yaml
+dovecot_mail_ownership: shared
 dovecot_sql_enabled: true
 dovecot_sql:
   driver: mysql
@@ -852,8 +950,8 @@ dovecot_sql:
 
 This example accepts the directory mail address or UPN and returns mail as the
 canonical mailbox identity. PAM itself must accept the supplied login. Adapt the
-eligibility group and identity mapping to the directory. Mailbox storage still
-uses the dedicated vmail UID, not AD POSIX IDs.
+eligibility group and identity mapping to the directory. Publish the POSIX
+attributes and provision the private mailbox home before enabling the account.
 
 ```yaml
 dovecot_ldap_enabled: true
@@ -864,12 +962,14 @@ dovecot_ldap:
   base: DC=ad,DC=example,DC=com
   ca_file: /etc/mail/directory-ca.pem
   user_filter: "(&(objectClass=user)(|(mail=%{user})(userPrincipalName=%{user}))\
-    (memberOf=CN=MailUsers,OU=Groups,DC=ad,DC=example,DC=com)\
+    (uidNumber=*)(gidNumber=*)(memberOf=CN=MailUsers,OU=Groups,DC=ad,DC=example,DC=com)\
     (!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
   user_fields:
     user: '%{ldap:mail}'
+    uid: '%{ldap:uidNumber}'
+    gid: '%{ldap:gidNumber}'
   iterate_filter: "(&(objectClass=user)(mail=*)\
-    (memberOf=CN=MailUsers,OU=Groups,DC=ad,DC=example,DC=com)\
+    (uidNumber=*)(gidNumber=*)(memberOf=CN=MailUsers,OU=Groups,DC=ad,DC=example,DC=com)\
     (!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
   iterate_user: '%{ldap:mail}'
 ```
@@ -877,6 +977,7 @@ dovecot_ldap:
 ## References
 
 - [Dovecot security advisory OXDC-ADV-2026-0003](https://documentation.open-xchange.com/dovecot/security/advisories/html/2026/oxdc-adv-2026-0003.html)
+- [Dovecot LMTP process privileges](https://doc.dovecot.org/main/core/config/delivery/lmtp.html#security)
 - [Dovecot LMTP and Postfix](https://doc.dovecot.org/main/howto/lmtp/postfix.html)
 - [Dovecot 2.3 to 2.4 configuration changes](https://doc.dovecot.org/main/installation/upgrade/2.3-to-2.4.html)
 - [Pigeonhole Sieve](https://doc.dovecot.org/main/core/plugins/sieve.html)

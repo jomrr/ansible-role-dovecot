@@ -34,20 +34,32 @@ provisioner:
         dovecot_tls_private_key: "/etc/dovecot-test/server.key"
         dovecot_users:
           - name: "maildir@example.test"
+            uid: 70001
+            gid: 70000
             password_hash: "{SHA512-CRYPT}$$6$$dovecotfixture$$nJZZj3C.o5vFWgDGA0iKfaH1Nkh.X7YmBW/XxbdKjqMJFQlqoK68wFo4OjGZu1AE8epNkeV4h/27kwps1UGE.."
             mail_format: "maildir"
           - name: "mbox@example.test"
+            uid: 70002
+            gid: 70000
             password_hash: "{SHA512-CRYPT}$$6$$dovecotfixture$$nJZZj3C.o5vFWgDGA0iKfaH1Nkh.X7YmBW/XxbdKjqMJFQlqoK68wFo4OjGZu1AE8epNkeV4h/27kwps1UGE.."
             mail_format: "mbox"
           - name: "sdbox@example.test"
+            uid: 70003
+            gid: 70000
             password_hash: "{SHA512-CRYPT}$$6$$dovecotfixture$$nJZZj3C.o5vFWgDGA0iKfaH1Nkh.X7YmBW/XxbdKjqMJFQlqoK68wFo4OjGZu1AE8epNkeV4h/27kwps1UGE.."
             mail_format: "sdbox"
           - name: "mdbox@example.test"
+            uid: 70004
+            gid: 70000
             password_hash: "{SHA512-CRYPT}$$6$$dovecotfixture$$nJZZj3C.o5vFWgDGA0iKfaH1Nkh.X7YmBW/XxbdKjqMJFQlqoK68wFo4OjGZu1AE8epNkeV4h/27kwps1UGE.."
             mail_format: "mdbox"
           - name: "delivery@example.test"
+            uid: 70005
+            gid: 70000
             password_hash: "*"
           - name: "pamlocal@mail.test"
+            uid: 70006
+            gid: 70000
             password_hash: "*"
         dovecot_sieve_before: |
           require ["fileinto"];
@@ -77,7 +89,7 @@ provisioner:
           ca_file: "/etc/dovecot-test/directory-ca.pem"
           password_query: "SELECT username AS user, password FROM mailbox WHERE username = '%{user}' AND active = TRUE AND\
             \ password <> '*'"
-          user_query: "SELECT username AS user FROM mailbox WHERE username = '%{user}' AND active = TRUE"
+          user_query: "SELECT username AS user, uid, gid FROM mailbox WHERE username = '%{user}' AND active = TRUE"
           iterate_query: "SELECT username AS user FROM mailbox WHERE active = TRUE"
         dovecot_ldap:
           uris:
@@ -89,6 +101,8 @@ provisioner:
           user_filter: "(&(objectClass=user)(mail=%{user})(memberOf=CN=MailUsers,CN=Users,DC=mail,DC=test)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
           user_fields:
             user: "%{ldap:mail}"
+            uid: "%{ldap:uidNumber}"
+            gid: "%{ldap:gidNumber}"
           iterate_filter: "(&(objectClass=user)(memberOf=CN=MailUsers,CN=Users,DC=mail,DC=test)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
           iterate_user: "%{ldap:mail}"
     host_vars:
@@ -127,7 +141,12 @@ platforms:
     privileged: true
     network: "dovecot-${MOLECULE_SCENARIO_NAME}"
     extra_opts:
+      - "--uidmap=0:0:10000"
+      - "--uidmap=60000:10000:40000"
+      - "--gidmap=0:0:10000"
+      - "--gidmap=60000:10000:40000"
       - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
+      - "--tmpfs=/srv/samba:rw,size=256m,mode=0755"
     groups:
       - "dovecot_servers"
     name: "mail-dovecot"
@@ -139,6 +158,10 @@ platforms:
     privileged: true
     network: "dovecot-${MOLECULE_SCENARIO_NAME}"
     extra_opts:
+      - "--uidmap=0:0:10000"
+      - "--uidmap=60000:10000:40000"
+      - "--gidmap=0:0:10000"
+      - "--gidmap=60000:10000:40000"
       - "--tmpfs=/var/lib/samba:rw,size=1g,mode=0755"
     groups:
       - "dovecot_dc"

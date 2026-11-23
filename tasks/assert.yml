@@ -7,11 +7,9 @@
     that:
       - dovecot_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
       - dovecot_postmaster_address is match('^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+$')
-      - dovecot_mail_uid >= 1000
-      - dovecot_mail_gid >= 1000
       - dovecot_mail_root is match('^/[^\s:"{}]+$')
       - "'..' not in dovecot_mail_root.split('/')"
-      - dovecot_mail_root != '/'
+      - dovecot_mail_root.split('/') | difference(['', '.']) | length > 0
       - dovecot_lmtp_socket != dovecot_auth_socket
       - dovecot_lmtp_socket is match('^/[^\s"{}]+$')
       - dovecot_auth_socket is match('^/[^\s"{}]+$')
@@ -26,6 +24,38 @@
       - dovecot_auth_worker_user is match('^([a-z_][a-z0-9_-]*[$]?)?$')
     quiet: true
     fail_msg: Check delivery addresses, unique accounts, storage IDs, absolute paths and Sieve dependencies.
+
+- name: DOVECOT | Bound the mailbox process identities
+  ansible.builtin.assert:
+    that:
+      - 1000 <= dovecot_first_valid_uid <= dovecot_last_valid_uid < 4294967295
+      - 1000 <= dovecot_first_valid_gid <= dovecot_last_valid_gid < 4294967295
+      - dovecot_users | selectattr('uid', 'defined') | map(attribute='uid') | unique | length == dovecot_users | length
+    fail_msg: Reserve a non-system UID/GID range and assign each file mailbox a distinct numeric UID.
+  when: dovecot_mail_ownership == 'per_user'
+
+- name: DOVECOT | Require in-range numeric file mailbox identities
+  ansible.builtin.assert:
+    that:
+      - __dovecot_mailbox.uid is integer and dovecot_first_valid_uid <= __dovecot_mailbox.uid <= dovecot_last_valid_uid
+      - __dovecot_mailbox.gid is integer and dovecot_first_valid_gid <= __dovecot_mailbox.gid <= dovecot_last_valid_gid
+    fail_msg: Each file mailbox needs an in-range numeric UID and GID in per_user mode.
+    quiet: true
+  loop: "{{ __dovecot_mailbox_metadata }}"
+  loop_control:
+    loop_var: __dovecot_mailbox
+    label: "{{ __dovecot_mailbox.name }}"
+  when: dovecot_mail_ownership == 'per_user'
+
+- name: DOVECOT | Validate shared mailbox ownership
+  ansible.builtin.assert:
+    that:
+      - 1000 <= dovecot_mail_uid < 4294967295
+      - 1000 <= dovecot_mail_gid < 4294967295
+      - dovecot_users | selectattr('uid', 'defined') | list | length == 0
+      - dovecot_users | selectattr('gid', 'defined') | list | length == 0
+    fail_msg: Shared mode uses dovecot_mail_uid and dovecot_mail_gid for all file accounts.
+  when: dovecot_mail_ownership == 'shared'
 
 - name: DOVECOT | Require TLS material for network access
   ansible.builtin.assert:
@@ -119,6 +149,9 @@
       - dovecot_ldap.uris | length > 0
       - dovecot_ldap.user_filter | length > 0
       - dovecot_ldap.base | length > 0
+      - >-
+        dovecot_mail_ownership == 'shared' or
+        (dovecot_ldap.user_fields.uid | default('') | length > 0 and dovecot_ldap.user_fields.gid | default('') | length > 0)
       - dovecot_ldap.ca_file is match('^/[^\s"{}]+$')
     quiet: true
   when: dovecot_ldap_enabled
