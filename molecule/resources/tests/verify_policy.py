@@ -58,11 +58,13 @@ def message(recipient: str, body: str) -> EmailMessage:
     return mail
 
 
-def policy(expected: int) -> None:
+def policy(expected: int, *mail_options: str) -> None:
     """Exercise the SMTP recipient stage through real Postfix policy delegation."""
     with smtplib.SMTP("127.0.0.1", 10025, timeout=15) as client:
         client.ehlo()
-        client.mail(SENDER)
+        code, detail = client.mail(SENDER, options=mail_options)
+        if code != 250:
+            raise ValueError(f"SMTP MAIL expected 250, received {code} {detail!r}")
         code, detail = client.rcpt(QUOTA_USER)
         if code != expected:
             raise ValueError(f"SMTP RCPT expected {expected}, received {code} {detail!r}")
@@ -91,6 +93,8 @@ def over_quota(temporary: bool) -> None:
 def fill_mailbox() -> None:
     """Read actual IMAP usage and per-user limit after one delivery across the limit."""
     policy(250)
+    # The empty mailbox has a 16 KiB quota plus 8 KiB of delivery grace.
+    policy(552, "SIZE=32768")
     with smtplib.LMTP(LMTP, timeout=15) as client:
         client.send_message(message(QUOTA_USER, "x" * (17 * 1024)))
     with imap(QUOTA_USER) as client:

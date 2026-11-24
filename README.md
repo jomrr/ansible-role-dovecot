@@ -1304,9 +1304,13 @@ change and enables the service.
   authorization. Successful and unknown lookups return DUNNO. A full mailbox
   returns 552 5.2.2, or 452 4.2.2 with dovecot_quota_full_tempfail. The policy
   service handles one connection per process for mbox locking. Size its
-  process_limit for the number of concurrent Postfix policy connections. LMTP
-  enforces quota during delivery and applies the configured grace on the
-  crossing delivery.
+  process_limit for the number of concurrent Postfix policy connections.
+- When the SMTP client declares SIZE, the policy checks that size at RCPT. The
+  role sets 552 5.2.3 for a message too large for the recipient. Dovecot 2.4.5
+  uses the configured mailbox-full reply for this case, including 452 when
+  dovecot_quota_full_tempfail is enabled. Without SIZE, the RCPT check sees only
+  the current quota usage. LMTP checks the actual message and applies the
+  configured delivery grace.
 - Optional quota warnings run the caller-owned dovecot_quota_warning_program
   under dovecot_quota_warning_user with the percentage and login as separate
   arguments. Use a root-owned executable, validate arguments and avoid
@@ -1549,6 +1553,7 @@ dovecot_submission_host: 127.0.0.1:10025
 
 - [Dovecot CE packages and signing key](https://dovecot.org/download)
 - [Dovecot quota](https://doc.dovecot.org/2.4.1/core/plugins/quota.html)
+- [Dovecot 2.4.5 quota-status response handling](https://github.com/dovecot/core/blob/2.4.5/src/plugins/quota/quota-status.c#L232-L245)
 - [Dovecot security advisory OXDC-ADV-2026-0003](https://documentation.open-xchange.com/dovecot/security/advisories/html/2026/oxdc-adv-2026-0003.html)
 - [Dovecot LMTP process privileges](https://doc.dovecot.org/main/core/config/delivery/lmtp.html#security)
 - [Dovecot LMTP and Postfix](https://doc.dovecot.org/main/howto/lmtp/postfix.html)

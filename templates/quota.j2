@@ -16,6 +16,7 @@ quota user {
 {% if dovecot_quota_status_enabled %}
 quota_status_success = DUNNO
 quota_status_nouser = DUNNO
+quota_status_toolarge = 552 5.2.3 Message exceeds size limit for this recipient
 quota_status_overquota = {{ '452 4.2.2' if dovecot_quota_full_tempfail else '552 5.2.2' }} Mailbox full
 service quota-status {
   executable = quota-status -p postfix
