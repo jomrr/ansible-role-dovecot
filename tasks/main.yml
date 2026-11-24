@@ -30,11 +30,26 @@
 - name: DOVECOT | Configure delivery and client protocols
   ansible.builtin.import_tasks: config.yml
 
+- name: DOVECOT | Compare installed inputs with the last successful activation
+  ansible.builtin.import_tasks: activation.yml
+
 - name: DOVECOT | Manage the administrator Sieve script
   ansible.builtin.import_tasks: sieve.yml
 
 - name: DOVECOT | Activate the delivery service
   ansible.builtin.import_tasks: service.yml
+
+- name: DOVECOT | Record the revisions after successful service activation
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: "{{ __dovecot_activation_path }}"
+    content: |
+      {{ __dovecot_package_revision }}
+      {{ __dovecot_config_revision }}
+    owner: root
+    group: root
+    mode: '0600'
 
 - name: DOVECOT | Provision homes from active mailbox lookups
   ansible.builtin.import_tasks: provision.yml

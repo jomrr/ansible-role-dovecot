@@ -1,0 +1,39 @@
+---
+# role: dovecot
+# file: tasks/activation.yml
+
+- name: DOVECOT | Read installed Dovecot package versions
+  ansible.builtin.command:
+    argv: "{{ __dovecot_dpkg_query if ansible_facts.pkg_mgr == 'apt' else __dovecot_rpm_query }}"
+    expand_argument_vars: false
+  register: __dovecot_package_versions
+  changed_when: false
+  check_mode: false
+
+- name: DOVECOT | Fingerprint the configuration files loaded by the master
+  become: true
+  become_user: root
+  ansible.builtin.find:
+    paths: /etc/dovecot
+    patterns: [dovecot.conf, sql.conf.ext, ldap.conf.ext]
+    get_checksum: true
+    checksum_algorithm: sha256
+  register: __dovecot_master_files
+  no_log: true
+
+- name: DOVECOT | Locate the last successful activation record
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: "{{ __dovecot_activation_path }}"
+    get_checksum: false
+    get_mime: false
+  register: __dovecot_record_file
+
+- name: DOVECOT | Read the configuration and package revisions applied to the service
+  become: true
+  become_user: root
+  ansible.builtin.slurp:
+    src: "{{ __dovecot_activation_path }}"
+  register: __dovecot_activation_record
+  when: __dovecot_record_file.stat.exists

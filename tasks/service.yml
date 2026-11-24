@@ -2,13 +2,19 @@
 # role: dovecot
 # file: tasks/service.yml
 
-- name: DOVECOT | Apply configuration changes before service enforcement
-  ansible.builtin.meta: flush_handlers
+- name: DOVECOT | Validate the complete configuration before activation
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    cmd: "{{ __dovecot_validate_config | replace('%s', '/etc/dovecot/dovecot.conf') }}"
+  changed_when: false
+  no_log: true
+  when: __dovecot_service_state != 'started'
 
-- name: DOVECOT | Enable and start delivery
+- name: DOVECOT | Enable delivery and apply pending configuration or package changes
   become: true
   become_user: root
   ansible.builtin.service:
     name: dovecot
     enabled: true
-    state: started
+    state: "{{ __dovecot_service_state }}"

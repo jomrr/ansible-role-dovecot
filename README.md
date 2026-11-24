@@ -1094,10 +1094,14 @@ change and enables the service.
   submission-only account leaves existing IMAP sessions connected. A reload for
   service settings can disconnect clients. Schedule changes to active mail
   storage and authentication policy accordingly.
-- Installing additional Dovecot packages restarts the master so it loads their
-  plugin schemas. Plan package changes in a maintenance window.
-- The role compiles administrator Sieve scripts before activating configuration
-  changes.
+- The role restarts the master when the installed Dovecot packages change or
+  when taking over a host without an activation record. Schedule the first run
+  on a running server and package changes in a maintenance window.
+- The role compiles administrator Sieve scripts before activation. It records
+  the configuration and package revisions in /etc/dovecot/.ansible-activation
+  after the service manager reports successful activation. Following a failed
+  run, correct the error and rerun the role. Pending changes take effect even
+  when the configuration files already match the inventory.
 
 ## Security Notes
 

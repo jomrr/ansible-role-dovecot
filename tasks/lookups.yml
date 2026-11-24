@@ -2,28 +2,18 @@
 # role: dovecot
 # file: tasks/lookups.yml
 
-- name: DOVECOT | Configure the SQL lookup connection
+- name: DOVECOT | Configure enabled lookup connections
   become: true
   become_user: root
   ansible.builtin.template:
-    src: "sql.conf.ext.j2"
-    dest: /etc/dovecot/sql.conf.ext
+    src: "{{ __dovecot_backend.name }}.conf.ext.j2"
+    dest: "/etc/dovecot/{{ __dovecot_backend.name }}.conf.ext"
     owner: root
     group: dovecot
     mode: '0640'
-  when: dovecot_sql_enabled
+  loop: "{{ __dovecot_backends | selectattr('enabled') }}"
+  loop_control:
+    loop_var: __dovecot_backend
+    label: "{{ __dovecot_backend.name }}"
+  register: __dovecot_lookup_files
   no_log: true
-  notify: reload dovecot
-
-- name: DOVECOT | Configure the directory lookup connection
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: "ldap.conf.ext.j2"
-    dest: /etc/dovecot/ldap.conf.ext
-    owner: root
-    group: dovecot
-    mode: '0640'
-  when: dovecot_ldap_enabled
-  no_log: true
-  notify: reload dovecot

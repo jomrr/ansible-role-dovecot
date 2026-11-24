@@ -22,7 +22,6 @@
     # Prevent package scripts from starting an unconfigured daemon.
     policy_rc_d: "{{ 101 if ansible_facts.pkg_mgr == 'apt' else omit }}"
   register: __dovecot_installed_packages
-  notify: reload dovecot
 
 - name: DOVECOT | Read the installed Dovecot version
   ansible.builtin.command:

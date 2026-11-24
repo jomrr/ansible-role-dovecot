@@ -20,7 +20,7 @@
   become_user: root
   ansible.builtin.command:
     argv: [/usr/bin/sievec, -c, /etc/dovecot/dovecot.conf, "{{ __dovecot_script_path }}.sieve"]
-    creates: "{{ omit if __dovecot_sieve_source.changed or __dovecot_config_file.changed else __dovecot_script_path ~ '.svbin' }}"
+    creates: "{{ omit if __dovecot_sieve_source.changed or __dovecot_service_state != 'started' else __dovecot_script_path ~ '.svbin' }}"
   register: __dovecot_compilation
   when: __dovecot_script.value | length > 0
 

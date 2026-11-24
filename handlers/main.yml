@@ -2,31 +2,10 @@
 # role: dovecot
 # file: handlers/main.yml
 
-- name: DOVECOT | Validate the complete configuration before reload
-  become: true
-  become_user: root
-  ansible.builtin.command:
-    cmd: "{{ __dovecot_validate_config | replace('%s', '/etc/dovecot/dovecot.conf') }}"
-  changed_when: false
-  no_log: true
-  listen: reload dovecot
-
 - name: DOVECOT | Reload the validated delivery configuration
-  become: true
-  become_user: root
-  ansible.builtin.service:
-    name: dovecot
-    state: reloaded
-  when: not __dovecot_installed_packages.changed
-  listen: reload dovecot
-
-- name: DOVECOT | Start a new master to load installed plugin schemas
-  become: true
-  become_user: root
-  ansible.builtin.service:
-    name: dovecot
-    state: restarted
-  when: __dovecot_installed_packages.changed
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/service.yml"
+  vars:
+    __dovecot_service_state: reloaded
   listen: reload dovecot
 
 - name: DOVECOT | Reload systemd after provisioning unit changes
