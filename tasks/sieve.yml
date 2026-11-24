@@ -3,7 +3,7 @@
 # file: tasks/sieve.yml
 
 - name: DOVECOT | Reconcile each administrator Sieve script and its binary
-  ansible.builtin.include_tasks: sieve-script.yml
+  ansible.builtin.include_tasks: sieve_script.yml
   loop: "{{ __dovecot_sieve_scripts | dict2items }}"
   loop_control:
     loop_var: __dovecot_script

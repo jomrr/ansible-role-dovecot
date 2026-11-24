@@ -1,0 +1,47 @@
+---
+DOCUMENTATION:
+  module: dovecot_activate
+  short_description: Reconcile the running Dovecot master with its validated inputs
+  description:
+    - Compares installed package versions and master configuration with the last successful service action.
+    - Acknowledges a validated revision after its service action succeeds under a host-local lock.
+  options:
+    operation:
+      description: Inspect the pending action or activate the previously validated revision.
+      type: str
+      choices: [plan, apply]
+      required: true
+    package_database:
+      description: Native database for installed Dovecot package versions.
+      type: str
+      choices: [dpkg, rpm]
+      required: true
+    expected_revision:
+      description: Exact revision previously inspected, required for apply.
+      type: str
+    service_manager:
+      description: Host service manager, required for apply.
+      type: str
+    predict_package_change:
+      description: Package changes predicted by the package task in check mode.
+      type: bool
+      default: false
+    predict_config_change:
+      description: Master configuration changes predicted by file tasks in check mode.
+      type: bool
+      default: false
+  author: Jonas Mauer
+EXAMPLES: |-
+  - name: Inspect the installed revision
+    dovecot_activate:
+      operation: plan
+      package_database: rpm
+RETURN:
+  action:
+    description: Requested service action, one of none, reload or restart.
+    type: str
+    returned: success
+  revision:
+    description: Package and file fingerprints to present for activation.
+    type: str
+    returned: success

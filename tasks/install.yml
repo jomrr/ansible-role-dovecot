@@ -2,9 +2,16 @@
 # role: dovecot
 # file: tasks/install.yml
 
-- name: DOVECOT | Configure the Dovecot CE package source on AlmaLinux
-  ansible.builtin.import_tasks: almalinux.yml
-  when: ansible_facts.distribution == 'AlmaLinux'
+- name: DOVECOT | Configure the distribution package source when provided
+  ansible.builtin.include_tasks: "{{ __dovecot_source_task }}"
+  loop: "{{ query('ansible.builtin.first_found', __dovecot_source_files) }}"
+  loop_control:
+    loop_var: __dovecot_source_task
+  vars:
+    __dovecot_source_files:
+      files: ["{{ ansible_facts.distribution | lower }}.yml"]
+      paths: ["{{ role_path }}/tasks/repository"]
+      skip: true
 
 - name: DOVECOT | Install delivery and selected protocol packages
   become: true
@@ -17,12 +24,13 @@
          + (dovecot_gssapi_enabled | ternary(__dovecot_gssapi_packages, []))
          + (dovecot_sql_enabled | ternary(__dovecot_sql_packages[dovecot_sql.driver], []))
          + (dovecot_ldap_enabled | ternary(__dovecot_ldap_packages, [])) }}
-    enablerepo: "{{ ['crb'] if ansible_facts.distribution == 'AlmaLinux' else omit }}"
+    enablerepo: "{{ __dovecot_enablerepo | default(omit) }}"
     state: present
     # Prevent package scripts from starting an unconfigured daemon.
-    policy_rc_d: "{{ 101 if ansible_facts.pkg_mgr == 'apt' else omit }}"
+    policy_rc_d: "{{ __dovecot_policy_rc_d | default(omit) }}"
   register: __dovecot_installed_packages
 
+# Package versions include distribution epochs and revisions. The executable reports the upstream version.
 - name: DOVECOT | Read the installed Dovecot version
   ansible.builtin.command:
     argv: [/usr/sbin/dovecot, --version]

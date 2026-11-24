@@ -67,7 +67,9 @@ def policy(expected: int, *mail_options: str) -> None:
             raise ValueError(f"SMTP MAIL expected 250, received {code} {detail!r}")
         code, detail = client.rcpt(QUOTA_USER)
         if code != expected:
-            raise ValueError(f"SMTP RCPT expected {expected}, received {code} {detail!r}")
+            raise ValueError(
+                f"SMTP RCPT expected {expected}, received {code} {detail!r}"
+            )
 
 
 def lmtp_failure() -> int:
@@ -127,7 +129,9 @@ def main() -> None:
             peer.settimeout(20)
             peer.connect(SESSION)
             if peer.recv(20) != b"OK":
-                sys.exit("Authenticated IMAP session did not survive account reconciliation")
+                sys.exit(
+                    "Authenticated IMAP session did not survive account reconciliation"
+                )
         fill_mailbox()
         over_quota(False)
         vacation()

@@ -31,7 +31,7 @@
 
   rescue:
     - name: DOVECOT | Report the rejected candidate
-      ansible.builtin.import_tasks: config-error.yml
+      ansible.builtin.import_tasks: config_error.yml
 
 - name: DOVECOT | Remove disabled lookup credentials
   become: true

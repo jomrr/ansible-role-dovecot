@@ -137,3 +137,13 @@
   loop_control:
     loop_var: __dovecot_home
     label: "{{ __dovecot_home.name }}"
+
+- name: DOVECOT | Install the shared mail clients used by the protocol checks
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    src: ../tests/mail_clients.py
+    dest: /etc/dovecot-test/mail_clients.py
+    owner: root
+    group: root
+    mode: '0644'

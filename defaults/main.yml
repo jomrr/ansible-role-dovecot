@@ -5,7 +5,7 @@
 # Server settings
 
 # Hostname used in delivery greetings and generated messages.
-dovecot_hostname: '{{ ansible_facts.fqdn }}'
+dovecot_hostname: '{{ ansible_facts.fqdn | default(inventory_hostname) }}'
 
 # Address receiving delivery error reports; required.
 # dovecot_postmaster_address: postmaster@example.com

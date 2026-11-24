@@ -2,6 +2,7 @@
 # role: dovecot
 # file: vars/AlmaLinux.yml
 
+__dovecot_enablerepo: [crb]
 __dovecot_packages:
   - 'dovecot >= 2:2.4'
   - dovecot-lmtpd

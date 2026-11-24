@@ -6,24 +6,7 @@ __dovecot_backends:
   - {name: sql, enabled: "{{ dovecot_sql_enabled }}"}
   - {name: ldap, enabled: "{{ dovecot_ldap_enabled }}"}
 
-__dovecot_activation_path: /etc/dovecot/.ansible-activation
-__dovecot_dpkg_query: [dpkg-query, -W, '-f=${db:Status-Status} ${binary:Package} ${Version}\n', 'dovecot*']
-__dovecot_rpm_query: [rpm, -qa, --queryformat, 'installed %{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE}.%{ARCH}\n', 'dovecot*']
-__dovecot_package_revision: >-
-  packages={{ __dovecot_package_versions.stdout_lines | select('match', '^installed ') | sort | join('\n') | hash('sha256') }}
-# Include file identity to detect restoration of previously applied bytes after manual drift.
-__dovecot_master_file_state: |-
-  {% for file in __dovecot_master_files.files | sort(attribute='path') %}
-  {{ file.path }} {{ file.inode }} {{ file.ctime }} {{ file.checksum }}
-  {% endfor %}
-__dovecot_config_revision: "config={{ __dovecot_master_file_state | hash('sha256') }}"
-__dovecot_applied_revisions: "{{ (__dovecot_activation_record.content | b64decode).splitlines() if __dovecot_record_file.stat.exists else [] }}"
-# In check mode the on-disk fingerprints still describe the previous configuration.
-__dovecot_predicted_reload: >-
-  {{ ansible_check_mode and (__dovecot_config_file.changed or __dovecot_lookup_files.changed or __dovecot_removed_lookups.changed) }}
-__dovecot_service_state: >-
-  {{ 'restarted' if __dovecot_installed_packages.changed or __dovecot_package_revision not in __dovecot_applied_revisions else
-     'reloaded' if __dovecot_predicted_reload or __dovecot_config_revision not in __dovecot_applied_revisions else 'started' }}
+__dovecot_package_database: rpm
 
 # Keep password hashes out of ownership assertions and filesystem module results.
 __dovecot_mailbox_metadata: "{{ dovecot_users | map('combine', {'password_hash': ''}) | list }}"

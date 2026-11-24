@@ -2,12 +2,6 @@
 # role: dovecot
 # file: handlers/main.yml
 
-- name: DOVECOT | Reload the validated delivery configuration
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/service.yml"
-  vars:
-    __dovecot_service_state: reloaded
-  listen: reload dovecot
-
 - name: DOVECOT | Reload systemd after provisioning unit changes
   become: true
   become_user: root

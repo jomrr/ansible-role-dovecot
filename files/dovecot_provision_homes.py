@@ -10,9 +10,11 @@ import stat
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, NamedTuple
+from typing import NamedTuple
 
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 # doveadm also uses EX_TEMPFAIL when Dovecot rejects one user's effective identity.
@@ -32,13 +34,19 @@ class Mailbox(NamedTuple):
 
 def doveadm(*args: str) -> list[str]:
     """Accept only complete output from a successful lookup or iteration."""
-    output = subprocess.check_output(["/usr/bin/doveadm", *args], text=True, stderr=subprocess.PIPE)
+    output = subprocess.check_output(
+        ["/usr/bin/doveadm", *args], text=True, stderr=subprocess.PIPE
+    )
     return output.splitlines()
 
 
 def mailbox(login: str, root: Path) -> Mailbox:
     """Read the canonical effective delivery identity for one literal login."""
-    if not login or login.startswith("-") or any(c.isspace() or c in "/*?\\" for c in login):
+    if (
+        not login
+        or login.startswith("-")
+        or any(c.isspace() or c in "/*?\\" for c in login)
+    ):
         raise ValueError("invalid iterated login")
     result = doveadm("-f", "tab", "user", "-x", "service=lmtp", login)
     if not result or result[0] != "field\tvalue":
@@ -54,12 +62,20 @@ def mailbox(login: str, root: Path) -> Mailbox:
     return Mailbox(fields.get("user", login), path, uid, gid)
 
 
-def skipped(name: str, reason: object) -> None:
-    """Report an isolated entry to the role or the timer journal."""
-    print(f"Skipping mailbox {name!r}: {reason}", file=sys.stderr)
+@dataclass
+class Result:
+    """Progress for a complete pass, including entries needing administrator attention."""
+
+    homes: int = 0
+    skipped: int = 0
+
+    def skip(self, name: str, reason: object) -> None:
+        """Report this entry immediately and preserve partial failure through the last mailbox."""
+        self.skipped += 1
+        print(f"Skipping mailbox {name!r}: {reason}", file=sys.stderr)
 
 
-def records(args: argparse.Namespace) -> Iterator[Mailbox]:
+def records(args: argparse.Namespace, result: Result) -> Iterator[Mailbox]:
     """Exclude every participant in a conflict before assigning any ownership."""
     boxes: set[Mailbox] = set()
     lookup_failure: subprocess.CalledProcessError | None = None
@@ -67,11 +83,15 @@ def records(args: argparse.Namespace) -> Iterator[Mailbox]:
         try:
             boxes.add(mailbox(login, args.root))
         except ValueError as error:
-            skipped(login, error)
+            result.skip(login, error)
         except subprocess.CalledProcessError as error:
             denial = DENIED_ID.search(error.stderr or "")
-            reason = denial[0] if denial else f"doveadm user exited with status {error.returncode}"
-            skipped(login, reason)
+            reason = (
+                denial[0]
+                if denial
+                else f"doveadm user exited with status {error.returncode}"
+            )
+            result.skip(login, reason)
             if denial is None and error.returncode != os.EX_NOUSER:
                 lookup_failure = error
     if not boxes and lookup_failure is not None:
@@ -79,15 +99,21 @@ def records(args: argparse.Namespace) -> Iterator[Mailbox]:
 
     homes = Counter(box.path for box in boxes)
     owners = Counter(box.uid for box in boxes)
-    parents = {parent for box in boxes for parent in box.path.parents if parent in homes}
+    parents = {
+        parent for box in boxes for parent in box.path.parents if parent in homes
+    }
     for box in sorted(boxes):
         if homes[box.path] > 1 or owners[box.uid] > 1:
-            skipped(box.name, "conflicting home or UID")
+            result.skip(box.name, "conflicting home or UID")
         elif box.path in parents or any(parent in homes for parent in box.path.parents):
-            skipped(box.name, "overlapping mailbox homes")
-        elif not (args.uid_min <= box.uid <= args.uid_max
-                  and args.gid_min <= box.gid <= args.gid_max):
-            skipped(box.name, f"UID {box.uid} or GID {box.gid} outside permitted range")
+            result.skip(box.name, "overlapping mailbox homes")
+        elif not (
+            args.uid_min <= box.uid <= args.uid_max
+            and args.gid_min <= box.gid <= args.gid_max
+        ):
+            result.skip(
+                box.name, f"UID {box.uid} or GID {box.gid} outside permitted range"
+            )
         else:
             yield box
 
@@ -96,7 +122,9 @@ def trusted(fd: int) -> None:
     """Check the parent before using it to address a child."""
     info = os.fstat(fd)
     if info.st_uid != 0 or info.st_mode & 0o022:
-        raise ValueError("mailbox parents must be root-owned and private to administrators")
+        raise ValueError(
+            "mailbox parents must be root-owned and private to administrators"
+        )
 
 
 @contextmanager
@@ -141,7 +169,11 @@ def provision(parent: int, box: Mailbox, check: bool) -> bool:
         return True
     try:
         info = os.fstat(fd)
-        if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (box.uid, box.gid, 0o700):
+        if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (
+            box.uid,
+            box.gid,
+            0o700,
+        ):
             raise ValueError(
                 f"existing home {str(box.path)!r} has UID {info.st_uid}, GID {info.st_gid} "
                 f"and mode {stat.S_IMODE(info.st_mode):04o}, expected {box.uid}:{box.gid} and 0700"
@@ -151,28 +183,32 @@ def provision(parent: int, box: Mailbox, check: bool) -> bool:
     return False
 
 
-def reconcile(args: argparse.Namespace) -> int:
+def reconcile(args: argparse.Namespace, result: Result) -> None:
     """Serialize role and timer runs against the same directory inode."""
     anchor = os.open("/", DIRECTORY)
     try:
         with directory(anchor, args.root.relative_to("/")) as root:
             fcntl.flock(root, fcntl.LOCK_EX)
-            count = 0
-            for box in records(args):
+            for box in records(args, result):
                 try:
-                    with directory(root, box.path.parent, create=not args.check) as parent:
-                        count += provision(parent, box, args.check)
+                    with directory(
+                        root, box.path.parent, create=not args.check
+                    ) as parent:
+                        result.homes += provision(parent, box, args.check)
                 except FileNotFoundError:
                     if not args.check:
                         raise
-                    count += 1
+                    result.homes += 1
                 except ValueError as error:
-                    skipped(box.name, error)
+                    result.skip(box.name, error)
                 except OSError as error:
-                    if error.errno not in (errno.ENOTDIR, errno.ELOOP, errno.ENAMETOOLONG):
+                    if error.errno not in (
+                        errno.ENOTDIR,
+                        errno.ELOOP,
+                        errno.ENAMETOOLONG,
+                    ):
                         raise
-                    skipped(box.name, error.strerror)
-            return count
+                    result.skip(box.name, error.strerror)
     finally:
         os.close(anchor)
 
@@ -184,12 +220,16 @@ def main() -> int:
     parser.add_argument("root", type=Path)
     for limit in ("uid_min", "uid_max", "gid_min", "gid_max"):
         parser.add_argument(limit, type=int)
+    args = parser.parse_args()
+    result = Result()
     try:
-        print(reconcile(parser.parse_args()))
+        reconcile(args, result)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(f"Mailbox provisioning failed: {error}", file=sys.stderr)
         return 1
-    return 0
+    finally:
+        print(result.homes)
+    return os.EX_DATAERR if result.skipped else 0
 
 
 if __name__ == "__main__":

@@ -2,10 +2,56 @@
 # role: dovecot
 # file: molecule/resources/playbooks/verify.yml
 
+- name: DOVECOT | Enable a mixed batch of PostfixAdmin mailboxes
+  hosts: dovecot_dc
+  gather_facts: false
+  tasks:
+    - name: DOVECOT | Release a new mailbox alongside invalid identities and an unsafe home
+      become: true
+      become_user: root
+      ansible.mysql.mysql_query:
+        login_unix_socket: /run/mysqld/mysqld.sock
+        login_db: postfixadmin
+        query: >-
+          UPDATE mailbox SET active = TRUE
+          WHERE username IN ('baduid@mail.test', 'badgid@mail.test', 'drift@mail.test', 'newhome@mail.test')
+
 - name: DOVECOT | Verify delivery and secure client access
   hosts: dovecot_servers
   gather_facts: true
   tasks:
+
+    - name: DOVECOT | Verify partial provisioning on one mail host
+      when: inventory_hostname == ansible_play_hosts_all[0]
+      block:
+        - name: DOVECOT | Reconcile the mixed batch through the role
+          ansible.builtin.include_role:
+            name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
+            tasks_from: provision
+
+        - name: DOVECOT | Fail if skipped homes went unreported
+          ansible.builtin.fail:
+            msg: The role accepted the invalid mailbox records.
+
+      rescue:
+        - name: DOVECOT | Inspect the valid home created in the same pass
+          ansible.builtin.stat:
+            path: /var/vmail/newhome@mail.test
+            get_checksum: false
+            get_mime: false
+          register: __dovecot_new_home
+
+        - name: DOVECOT | Require private storage for the new user and a diagnostic for each skipped mailbox
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.rc | default(-1) == 65
+              - ansible_failed_result.changed
+              - "'baduid@mail.test' in ansible_failed_result.stderr"
+              - "'badgid@mail.test' in ansible_failed_result.stderr"
+              - "'drift@mail.test' in ansible_failed_result.stderr"
+              - __dovecot_new_home.stat.uid == 70206
+              - __dovecot_new_home.stat.mode == '0700'
+            quiet: true
 
     - name: DOVECOT | Exercise storage formats, Sieve, authentication and TLS policy
       become: true
@@ -13,6 +59,8 @@
       ansible.builtin.script:
         cmd: ../tests/verify_delivery.py
         executable: python3
+      environment:
+        PYTHONPATH: /etc/dovecot-test
       changed_when: false
 
     - name: DOVECOT | Verify session continuity, mailbox quota and SMTP vacation replies
@@ -39,6 +87,8 @@
       ansible.builtin.script:
         cmd: ../tests/verify_delivery.py --sql
         executable: python3
+      environment:
+        PYTHONPATH: /etc/dovecot-test
       changed_when: false
 
     - name: DOVECOT | Verify the operator receives the native configuration error
@@ -137,6 +187,8 @@
       ansible.builtin.script:
         cmd: ../tests/verify_delivery.py --outage
         executable: python3
+      environment:
+        PYTHONPATH: /etc/dovecot-test
       changed_when: false
 
 - name: DOVECOT | Interrupt one delivery-only transition after writing its configuration
@@ -184,4 +236,6 @@
       ansible.builtin.script:
         cmd: ../tests/verify_delivery.py --mda
         executable: python3
+      environment:
+        PYTHONPATH: /etc/dovecot-test
       changed_when: false

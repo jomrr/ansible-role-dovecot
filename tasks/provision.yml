@@ -14,23 +14,6 @@
   register: __dovecot_home_tool
   when: __dovecot_provision
 
-- name: DOVECOT | Reconcile external mailbox homes
-  become: true
-  become_user: root
-  ansible.builtin.command:
-    argv: "{{ __dovecot_home_args + (['--check'] if ansible_check_mode else []) }}"
-  register: __dovecot_homes
-  check_mode: false
-  changed_when: __dovecot_homes.stdout | int > 0
-  when:
-    - __dovecot_provision
-    - not ansible_check_mode or not (__dovecot_home_tool.changed or __dovecot_config_file.changed)
-
-- name: DOVECOT | Report mailbox provisioning warnings
-  ansible.builtin.debug:
-    msg: "{{ __dovecot_homes.stderr_lines }}"
-  when: __dovecot_homes.stderr_lines | default([]) | length > 0
-
 - name: DOVECOT | Install periodic provisioning units
   become: true
   become_user: root
@@ -96,3 +79,16 @@
     path: /usr/local/sbin/dovecot-provision-homes
     state: absent
   when: not __dovecot_provision
+
+# The role and timer use the same doveadm-based reconciler and its read-only check mode.
+- name: DOVECOT | Reconcile external mailbox homes
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv: "{{ __dovecot_home_args + (['--check'] if ansible_check_mode else []) }}"
+  register: __dovecot_homes
+  check_mode: false
+  changed_when: __dovecot_homes.stdout | int > 0
+  when:
+    - __dovecot_provision
+    - not ansible_check_mode or not (__dovecot_home_tool.changed or __dovecot_config_file.changed)

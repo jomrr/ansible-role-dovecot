@@ -9,8 +9,9 @@ argument_specs:
     options:
       dovecot_hostname:
         type: str
-        description: Hostname used in delivery greetings and generated messages.
-        default: '{{ ansible_facts.fqdn }}'
+        description: Hostname used in delivery greetings and generated messages. Defaults
+          to the host FQDN, with the inventory name as fallback.
+        default: '{{ ansible_facts.fqdn | default(inventory_hostname) }}'
       dovecot_postmaster_address:
         type: str
         description: Address receiving delivery error reports; required.

@@ -2,6 +2,9 @@
 # role: dovecot
 # file: vars/Debian.yml
 
+__dovecot_package_database: dpkg
+# Suppress automatic daemon startup until the configuration has been validated.
+__dovecot_policy_rc_d: 101
 __dovecot_packages:
   - dovecot-core
   - dovecot-lmtpd

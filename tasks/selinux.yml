@@ -33,6 +33,7 @@
     setype: "{{ dovecot_selinux_type }}"
     state: present
 
+# sefcontext registers the policy. Only restorecon reconciles labels on existing files.
 - name: DOVECOT | Apply the mailbox context to existing storage
   become: true
   become_user: root

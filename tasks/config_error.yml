@@ -1,6 +1,6 @@
 ---
 # role: dovecot
-# file: tasks/config-error.yml
+# file: tasks/config_error.yml
 
 - name: DOVECOT | Preserve the configuration diagnostic for the administrator
   become: true

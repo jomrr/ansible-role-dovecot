@@ -239,11 +239,16 @@
     quiet: true
   when: dovecot_quota_warning_thresholds | length > 0
 
-- name: DOVECOT | Resolve the quota warning service UID
-  ansible.builtin.command:
-    argv: [id, -u, "{{ dovecot_quota_warning_user }}"]
-  register: __dovecot_warning_uid
-  changed_when: false
-  check_mode: false
-  failed_when: __dovecot_warning_uid.rc != 0 or __dovecot_warning_uid.stdout | int == 0
+- name: DOVECOT | Resolve the quota warning account through NSS
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ dovecot_quota_warning_user }}"
+  register: __dovecot_warning_account
+  when: dovecot_quota_warning_thresholds | length > 0
+
+- name: DOVECOT | Reject a quota warning account with UID zero
+  ansible.builtin.assert:
+    that: (__dovecot_warning_account.ansible_facts.getent_passwd.values() | first)[1] | int > 0
+    fail_msg: The quota warning program requires a non-root UID.
+    quiet: true
   when: dovecot_quota_warning_thresholds | length > 0

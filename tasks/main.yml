@@ -2,6 +2,11 @@
 # role: dovecot
 # file: tasks/main.yml
 
+- name: DOVECOT | Gather missing host facts required by the role
+  ansible.builtin.setup:
+    gather_subset: ['!all', '!min', distribution, platform, pkg_mgr, selinux, service_mgr]
+  when: "['distribution', 'os_family', 'fqdn', 'pkg_mgr', 'selinux', 'service_mgr'] | difference(ansible_facts.keys()) | length > 0"
+
 - name: DOVECOT | Load platform settings
   ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', __dovecot_platform_files) }}"
   vars:
@@ -30,26 +35,8 @@
 - name: DOVECOT | Configure delivery and client protocols
   ansible.builtin.import_tasks: config.yml
 
-- name: DOVECOT | Compare installed inputs with the last successful activation
+- name: DOVECOT | Compile Sieve and activate the validated service
   ansible.builtin.import_tasks: activation.yml
-
-- name: DOVECOT | Manage the administrator Sieve script
-  ansible.builtin.import_tasks: sieve.yml
-
-- name: DOVECOT | Activate the delivery service
-  ansible.builtin.import_tasks: service.yml
-
-- name: DOVECOT | Record the revisions after successful service activation
-  become: true
-  become_user: root
-  ansible.builtin.copy:
-    dest: "{{ __dovecot_activation_path }}"
-    content: |
-      {{ __dovecot_package_revision }}
-      {{ __dovecot_config_revision }}
-    owner: root
-    group: root
-    mode: '0600'
 
 - name: DOVECOT | Provision homes from active mailbox lookups
   ansible.builtin.import_tasks: provision.yml
