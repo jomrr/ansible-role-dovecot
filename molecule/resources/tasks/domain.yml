@@ -130,7 +130,9 @@
   loop_control:
     loop_var: __dovecot_service
     label: "{{ __dovecot_service | join('/') }}"
-  changed_when: true
+  register: __dovecot_keytab_export
+  changed_when: __dovecot_keytab_export.rc == 0
+  failed_when: __dovecot_keytab_export.rc != 0
   no_log: true
 
 - name: DOVECOT | Install the standalone SMTP test receiver
@@ -158,3 +160,6 @@
       - "inet:{{ ansible_facts.default_ipv4.address }}:10026"
       - '16'
     creates: /run/dovecot-test-smtp
+  register: __dovecot_smtp_sink
+  changed_when: __dovecot_smtp_sink.changed and __dovecot_smtp_sink.rc == 0
+  failed_when: __dovecot_smtp_sink.rc != 0

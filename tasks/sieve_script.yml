@@ -2,7 +2,7 @@
 # role: dovecot
 # file: tasks/sieve_script.yml
 
-- name: DOVECOT | Validate and install the administrator Sieve source
+- name: sieve_script | Validate and install the administrator Sieve source
   become: true
   become_user: root
   ansible.builtin.template:
@@ -11,21 +11,24 @@
     owner: root
     group: "{{ __dovecot_script_group }}"
     mode: '0640'
+    backup: "{{ dovecot_backup }}"
     validate: /usr/bin/sievec -c /etc/dovecot/dovecot.conf %s
   register: __dovecot_sieve_source
   when: __dovecot_script.value | length > 0
 
 # sievec builds the binary executed by Pigeonhole against the pending Dovecot configuration.
-- name: DOVECOT | Compile the administrator script for the current configuration
+- name: sieve_script | Compile the administrator script for the current configuration
   become: true
   become_user: root
   ansible.builtin.command:
     argv: [/usr/bin/sievec, -c, /etc/dovecot/dovecot.conf, "{{ __dovecot_script_path }}.sieve"]
-    creates: "{{ omit if __dovecot_sieve_source.changed or __dovecot_activation.action != 'none' else __dovecot_script_path ~ '.svbin' }}"
+    creates: "{{ omit if __dovecot_sieve_source.changed or __dovecot_activation.pending else __dovecot_script_path ~ '.svbin' }}"
   register: __dovecot_compilation
+  changed_when: __dovecot_compilation.changed and __dovecot_compilation.rc == 0
+  failed_when: __dovecot_compilation.rc != 0
   when: __dovecot_script.value | length > 0
 
-- name: DOVECOT | Protect the compiled Sieve binary
+- name: sieve_script | Protect the compiled Sieve binary
   become: true
   become_user: root
   ansible.builtin.file:
@@ -37,7 +40,7 @@
     - __dovecot_script.value | length > 0
     - not ansible_check_mode or not (__dovecot_compilation.changed or __dovecot_compilation is skipped)
 
-- name: DOVECOT | Remove the inactive script and compiled binary
+- name: sieve_script | Remove the inactive script and compiled binary
   become: true
   become_user: root
   ansible.builtin.file:

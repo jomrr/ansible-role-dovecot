@@ -9,10 +9,10 @@ ssl_cipher_list = {{ dovecot_tls_cipher_list | to_json }}
 {% if dovecot_tls_curve_list %}
 ssl_curve_list = {{ dovecot_tls_curve_list | to_json }}
 {% endif %}
-{% for certificate in dovecot_tls_sni %}
-local_name {{ certificate.name }} {
-  ssl_server_cert_file = {{ certificate.certificate | to_json }}
-  ssl_server_key_file = {{ certificate.private_key | to_json }}
+{% for __dovecot_cert in dovecot_tls_sni %}
+local_name {{ __dovecot_cert.name }} {
+  ssl_server_cert_file = {{ __dovecot_cert.certificate | to_json }}
+  ssl_server_key_file = {{ __dovecot_cert.private_key | to_json }}
 }
 {% endfor %}
 {% else %}

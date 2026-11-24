@@ -11,15 +11,15 @@ service lmtp {
   }
 }
 {% endif %}
-service auth {
 {% if dovecot_postfix_auth_enabled %}
+service auth {
   unix_listener {{ dovecot_auth_socket }} {
     mode = 0600
     user = {{ dovecot_socket_user | to_json }}
     group = {{ dovecot_socket_group | to_json }}
   }
-{% endif %}
 }
+{% endif %}
 {% if dovecot_imap_enabled %}
 service imap-login {
   inet_listener imap {
@@ -47,10 +47,10 @@ service managesieve-login {
 
 {% if dovecot_imap_enabled %}
 protocol imap {
-{% if dovecot_imap_max_userip_connections is not none %}
+{% if dovecot_imap_max_userip_connections | default(none) is not none %}
   mail_max_userip_connections = {{ dovecot_imap_max_userip_connections }}
 {% endif %}
-{% if dovecot_imap_idle_notify_interval is not none %}
+{% if dovecot_imap_idle_notify_interval | default(none) is not none %}
   imap_idle_notify_interval = {{ dovecot_imap_idle_notify_interval }}s
 {% endif %}
 {% if dovecot_quota_enabled %}
@@ -60,10 +60,10 @@ protocol imap {
 {% endif %}
 }
 {% endif %}
-{% for service, settings in dovecot_services.items() %}
-service {{ service }} {
-{% for setting, value in settings.items() %}
-  {{ setting }} = {{ value | string | to_json }}
+{% for __dovecot_service, __dovecot_settings in dovecot_services.items() %}
+service {{ __dovecot_service }} {
+{% for __dovecot_setting, __dovecot_value in __dovecot_settings.items() %}
+  {{ __dovecot_setting }} = {{ __dovecot_value | string | to_json }}
 {% endfor %}
 }
 {% endfor %}

@@ -4,11 +4,11 @@ quota_storage_grace = {{ dovecot_quota_grace }}B
 quota_full_tempfail = {{ dovecot_quota_full_tempfail | ternary('yes', 'no') }}
 quota user {
   driver = count
-{% for percent in dovecot_quota_warning_thresholds | sort(reverse=true) %}
-  warning warn-{{ percent }} {
-    quota_storage_percentage = {{ percent }}
+{% for __dovecot_threshold in dovecot_quota_warning_thresholds | sort(reverse=true) %}
+  warning warn-{{ __dovecot_threshold }} {
+    quota_storage_percentage = {{ __dovecot_threshold }}
     execute quota-warning {
-      args = {{ percent }} %{user}
+      args = {{ __dovecot_threshold }} %{user}
     }
   }
 {% endfor %}

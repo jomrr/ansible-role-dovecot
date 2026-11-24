@@ -1,5 +1,7 @@
-# Managed by ansible.
+{{ ansible_managed | comment(prefix_count=0, postfix_count=0) }}
 # file: {{ template_destpath }}
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
 {% if dovecot_sql.driver == 'mysql' %}
 mysql {{ dovecot_sql.host }} {
   port = {{ dovecot_sql.port }}

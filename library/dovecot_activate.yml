@@ -1,20 +1,18 @@
 ---
+# role: dovecot
+# file: library/dovecot_activate.yml
+
 DOCUMENTATION:
   module: dovecot_activate
   short_description: Reconcile the running Dovecot master with its validated inputs
   description:
-    - Compares installed package versions and master configuration with the last successful service action.
+    - Compares the master configuration with the last successful service activation.
     - Acknowledges a validated revision after its service action succeeds under a host-local lock.
   options:
     operation:
-      description: Inspect the pending action or activate the previously validated revision.
+      description: Capture the prior lookup drivers, inspect pending configuration or apply the validated revision.
       type: str
-      choices: [plan, apply]
-      required: true
-    package_database:
-      description: Native database for installed Dovecot package versions.
-      type: str
-      choices: [dpkg, rpm]
+      choices: [baseline, plan, apply]
       required: true
     expected_revision:
       description: Exact revision previously inspected, required for apply.
@@ -22,10 +20,11 @@ DOCUMENTATION:
     service_manager:
       description: Host service manager, required for apply.
       type: str
-    predict_package_change:
-      description: Package changes predicted by the package task in check mode.
-      type: bool
-      default: false
+    lookup_drivers:
+      description: Selected SQL and LDAP drivers, required for apply. Adding a driver restarts a running master.
+      type: list
+      elements: str
+      choices: [mysql, pgsql, ldap]
     predict_config_change:
       description: Master configuration changes predicted by file tasks in check mode.
       type: bool
@@ -35,13 +34,12 @@ EXAMPLES: |-
   - name: Inspect the installed revision
     dovecot_activate:
       operation: plan
-      package_database: rpm
 RETURN:
-  action:
-    description: Requested service action, one of none, reload or restart.
-    type: str
-    returned: success
+  pending:
+    description: Whether the configuration requires activation.
+    type: bool
+    returned: plan or apply
   revision:
-    description: Package and file fingerprints to present for activation.
+    description: Configuration revision to present for activation.
     type: str
-    returned: success
+    returned: plan or apply

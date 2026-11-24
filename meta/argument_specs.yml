@@ -11,7 +11,6 @@ argument_specs:
         type: str
         description: Hostname used in delivery greetings and generated messages. Defaults
           to the host FQDN, with the inventory name as fallback.
-        default: '{{ ansible_facts.fqdn | default(inventory_hostname) }}'
       dovecot_postmaster_address:
         type: str
         description: Address receiving delivery error reports; required.
@@ -169,8 +168,9 @@ argument_specs:
         default: false
       dovecot_backup:
         type: bool
-        description: Back up the managed main configuration before replacement.
-        default: false
+        description: Back up managed files before replacement, except authentication and
+          lookup credentials.
+        default: true
       dovecot_sasl_users:
         type: list
         elements: dict
@@ -228,8 +228,8 @@ argument_specs:
           and distribution are external.
       dovecot_gssapi_hostname:
         type: str
-        default: '{{ dovecot_hostname }}'
-        description: Exact hostname registered in the IMAP and SMTP service principals.
+        description: Hostname registered in the IMAP and SMTP service principals. Defaults
+          to the effective Dovecot hostname.
       dovecot_sql_enabled:
         type: bool
         default: false

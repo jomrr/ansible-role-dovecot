@@ -2,18 +2,15 @@
 # role: dovecot
 # file: tasks/install.yml
 
-- name: DOVECOT | Configure the distribution package source when provided
-  ansible.builtin.include_tasks: "{{ __dovecot_source_task }}"
-  loop: "{{ query('ansible.builtin.first_found', __dovecot_source_files) }}"
-  loop_control:
-    loop_var: __dovecot_source_task
-  vars:
-    __dovecot_source_files:
-      files: ["{{ ansible_facts.distribution | lower }}.yml"]
-      paths: ["{{ role_path }}/tasks/repository"]
-      skip: true
+- name: install | Install package repository prerequisites
+  become: true
+  become_user: root
+  ansible.builtin.package:
+    name: "{{ __dovecot_repository_packages }}"
+    state: present
+  when: __dovecot_repository_packages is defined
 
-- name: DOVECOT | Install delivery and selected protocol packages
+- name: install | Install delivery and selected protocol packages
   become: true
   become_user: root
   ansible.builtin.package:
@@ -23,24 +20,9 @@
          + (dovecot_sieve_enabled | ternary(__dovecot_sieve_packages, []))
          + (dovecot_gssapi_enabled | ternary(__dovecot_gssapi_packages, []))
          + (dovecot_sql_enabled | ternary(__dovecot_sql_packages[dovecot_sql.driver], []))
-         + (dovecot_ldap_enabled | ternary(__dovecot_ldap_packages, [])) }}
+         + (dovecot_ldap_enabled | ternary(__dovecot_ldap_packages, []))
+         + (__dovecot_selinux_enabled | ternary(__dovecot_selinux_packages, [])) }}
     enablerepo: "{{ __dovecot_enablerepo | default(omit) }}"
     state: present
     # Prevent package scripts from starting an unconfigured daemon.
     policy_rc_d: "{{ __dovecot_policy_rc_d | default(omit) }}"
-  register: __dovecot_installed_packages
-
-# Package versions include distribution epochs and revisions. The executable reports the upstream version.
-- name: DOVECOT | Read the installed Dovecot version
-  ansible.builtin.command:
-    argv: [/usr/sbin/dovecot, --version]
-  register: __dovecot_version
-  changed_when: false
-  check_mode: false
-
-- name: DOVECOT | Require Dovecot 2.4
-  ansible.builtin.assert:
-    that:
-      - __dovecot_version.stdout is match('^2\.4\.')
-    fail_msg: Dovecot 2.4 packages are required. Configure a compatible package repository before running the role.
-    quiet: true

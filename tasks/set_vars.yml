@@ -1,0 +1,17 @@
+---
+# role: dovecot
+# file: tasks/set_vars.yml
+
+- name: set_vars | Gather missing facts for storage, packages, hostname and service control
+  ansible.builtin.setup:
+    gather_subset: "{{ __dovecot_required_facts_subsets }}"
+  when: __dovecot_required_facts | difference(ansible_facts.keys()) | length > 0
+
+- name: set_vars | Load OS family settings followed by distribution overrides
+  ansible.builtin.include_vars: "{{ __dovecot_vars_file }}"
+  loop: "{{ [ansible_facts.os_family, ansible_facts.distribution] | unique }}"
+  loop_control:
+    loop_var: __dovecot_platform
+  vars:
+    __dovecot_vars_file: "{{ role_path }}/vars/{{ __dovecot_platform }}.yml"
+  when: __dovecot_vars_file is file

@@ -14,6 +14,7 @@
         argv: [journalctl, --unit=dovecot, --no-pager, --lines=60]
       register: __dovecot_journal
       changed_when: false
+      failed_when: __dovecot_journal.rc != 0
 
     - name: DOVECOT | Include service diagnostics in the test log
       ansible.builtin.debug:

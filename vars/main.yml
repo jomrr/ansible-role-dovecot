@@ -2,11 +2,16 @@
 # role: dovecot
 # file: vars/main.yml
 
+__dovecot_required_facts: [distribution, os_family, fqdn, pkg_mgr, selinux, service_mgr]
+__dovecot_required_facts_subsets: ['!all', '!min', distribution, platform, pkg_mgr, selinux, service_mgr]
+
+__dovecot_hostname: "{{ dovecot_hostname | default(ansible_facts.fqdn | default(inventory_hostname)) }}"
+__dovecot_gssapi_hostname: "{{ dovecot_gssapi_hostname | default(__dovecot_hostname) }}"
+__dovecot_selinux_enabled: "{{ ansible_facts.selinux.status | default('disabled') == 'enabled' }}"
+
 __dovecot_backends:
   - {name: sql, enabled: "{{ dovecot_sql_enabled }}"}
   - {name: ldap, enabled: "{{ dovecot_ldap_enabled }}"}
-
-__dovecot_package_database: rpm
 
 # Keep password hashes out of ownership assertions and filesystem module results.
 __dovecot_mailbox_metadata: "{{ dovecot_users | map('combine', {'password_hash': ''}) | list }}"

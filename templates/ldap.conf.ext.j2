@@ -1,5 +1,7 @@
-# Managed by ansible.
+{{ ansible_managed | comment(prefix_count=0, postfix_count=0) }}
 # file: {{ template_destpath }}
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
 ldap_uris = {{ dovecot_ldap.uris | join(' ') | to_json(ensure_ascii=False) }}
 ldap_auth_dn = {{ dovecot_ldap.bind_dn | to_json(ensure_ascii=False) }}
 ldap_auth_dn_password = {{ dovecot_ldap.bind_password | to_json(ensure_ascii=False) }}

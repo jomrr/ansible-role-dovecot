@@ -2,56 +2,38 @@
 # role: dovecot
 # file: tasks/activation.yml
 
-- name: DOVECOT | Determine pending activation before compiling administrator scripts
+- name: activation | Determine pending activation before compiling administrator scripts
   become: true
   become_user: root
   dovecot_activate:
     operation: plan
-    package_database: "{{ __dovecot_package_database }}"
-    predict_package_change: "{{ ansible_check_mode and __dovecot_installed_packages.changed }}"
     predict_config_change: "{{ ansible_check_mode and (__dovecot_config_file.changed or __dovecot_lookup_files.changed or __dovecot_removed_lookups.changed) }}"
   register: __dovecot_activation
 
-- name: DOVECOT | Prepare administrator scripts for the pending configuration
-  ansible.builtin.import_tasks: sieve.yml
+- name: activation | Reconcile each administrator Sieve script and its binary
+  ansible.builtin.include_tasks: sieve_script.yml
+  loop: "{{ __dovecot_sieve_scripts | dict2items }}"
+  loop_control:
+    loop_var: __dovecot_script
+    label: "{{ __dovecot_script.key }}"
+  vars:
+    __dovecot_script_path: "/etc/dovecot/sieve-{{ __dovecot_script.key }}"
+    __dovecot_script_group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
 
-- name: DOVECOT | Validate the complete configuration before activation
-  when: __dovecot_activation.action != 'none' and not ansible_check_mode
-  block:
-    # doveconf validates the complete installed set, including lookup files changed independently of dovecot.conf.
-    - name: DOVECOT | Check the installed configuration with doveconf
-      become: true
-      become_user: root
-      ansible.builtin.command:
-        cmd: "{{ __dovecot_validate_config | replace('%s', '/etc/dovecot/dovecot.conf') }}"
-      changed_when: false
-      no_log: true
-
-  rescue:
-    - name: DOVECOT | Report the failed service validation
-      ansible.builtin.import_tasks: config_error.yml
-
-- name: DOVECOT | Apply and acknowledge the validated revision
+- name: activation | Apply and acknowledge the validated revision
   become: true
   become_user: root
   dovecot_activate:
     operation: apply
-    package_database: "{{ __dovecot_package_database }}"
     expected_revision: "{{ __dovecot_activation.revision }}"
     service_manager: "{{ ansible_facts.service_mgr }}"
-  when: __dovecot_activation.action != 'none' and not ansible_check_mode
+    lookup_drivers: "{{ ([dovecot_sql.driver] if dovecot_sql_enabled else []) + (['ldap'] if dovecot_ldap_enabled else []) }}"
+  when: __dovecot_activation.pending and not ansible_check_mode
 
-- name: DOVECOT | Enable and start the delivery service
+- name: activation | Enable and start the delivery service
   become: true
   become_user: root
   ansible.builtin.service:
     name: dovecot
     enabled: true
     state: started
-
-- name: DOVECOT | Clear the diagnostic after successful activation
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: /var/log/dovecot-config-error.log
-    state: absent

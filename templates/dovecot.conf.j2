@@ -1,14 +1,24 @@
-# Managed by ansible.
+{{ ansible_managed | comment(prefix_count=0, postfix_count=0) }}
 # file: {{ template_destpath }}
-{% include 'mail.j2' %}{{ '\n' }}
-{% include 'auth.j2' %}{{ '\n' }}
-{% include 'settings.j2' %}{{ '\n' }}
-{% include 'tls.j2' %}{{ '\n' }}
-{% include 'services.j2' %}{{ '\n' }}
-{% include 'namespace.j2' %}{{ '\n' }}
-{% include 'sieve.j2' %}{{ '\n' }}
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
+{% include '_mail.j2' %}
+
+{% include '_auth.j2' %}
+
+{% include '_settings.j2' %}
+
+{% include '_tls.j2' %}
+
+{% include '_services.j2' %}
+
+{% include '_namespace.j2' %}
+
+{% include '_sieve.j2' %}
+
 {% if dovecot_quota_enabled %}
-{% include 'quota.j2' %}{{ '\n' }}
+{% include '_quota.j2' %}
+
 {% endif %}
 {% if dovecot_config %}
 {{ dovecot_config }}

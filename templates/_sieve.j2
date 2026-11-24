@@ -11,15 +11,15 @@ sieve_script personal {
   path = ~/sieve
   active_path = ~/.dovecot.sieve
 }
-{% for type, source in __dovecot_sieve_scripts.items() if source %}
-sieve_script {{ type }} {
-  type = {{ type }}
+{% for __dovecot_script_type, __dovecot_source in __dovecot_sieve_scripts.items() if __dovecot_source %}
+sieve_script {{ __dovecot_script_type }} {
+  type = {{ __dovecot_script_type }}
   driver = file
-  path = /etc/dovecot/sieve-{{ type }}.sieve
+  path = /etc/dovecot/sieve-{{ __dovecot_script_type }}.sieve
 }
 {% endfor %}
-{% set replies = ['vacation', 'reject'] if __dovecot_sieve_has_transport else [] %}
-sieve_extensions = {{ (dovecot_sieve_extensions or (__dovecot_sieve_local_extensions + replies)) | join(' ') | to_json }}
+{% set __dovecot_reply_extensions = ['vacation', 'reject'] if __dovecot_sieve_has_transport else [] %}
+sieve_extensions = {{ (dovecot_sieve_extensions or (__dovecot_sieve_local_extensions + __dovecot_reply_extensions)) | join(' ') | to_json }}
 sieve_max_redirects = {{ dovecot_sieve_max_redirects }}
 sieve_max_script_size = {{ dovecot_sieve_max_script_size }}B
 sieve_quota_script_count = {{ dovecot_sieve_quota_script_count }}

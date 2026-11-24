@@ -5,13 +5,13 @@ service auth-worker {
 {% endif %}
 {% if dovecot_gssapi_enabled %}
 auth_krb5_keytab = {{ dovecot_krb5_keytab | to_json }}
-auth_gssapi_hostname = {{ dovecot_gssapi_hostname | to_json }}
+auth_gssapi_hostname = {{ __dovecot_gssapi_hostname | to_json }}
 {% endif %}
 {% if dovecot_mail_ownership == 'shared' %}
 mail_uid = {{ dovecot_mail_uid }}
 mail_gid = {{ dovecot_mail_gid }}
 {% endif %}
-hostname = {{ dovecot_hostname | to_json }}
+hostname = {{ __dovecot_hostname | to_json }}
 postmaster_address = {{ dovecot_postmaster_address | to_json }}
 protocols = {{ {'lmtp': dovecot_lmtp_enabled, 'imap': dovecot_imap_enabled, 'sieve': dovecot_managesieve_enabled} | dict2items | selectattr('value') | map(attribute='key') | join(' ') }}
 listen = {{ dovecot_listen | join(', ') | to_json }}
@@ -34,8 +34,8 @@ auth_cache_size = {{ dovecot_auth_cache_size }}B
 auth_cache_ttl = {{ dovecot_auth_cache_ttl }}s
 auth_cache_negative_ttl = {{ dovecot_auth_cache_negative_ttl }}s
 {% endif %}
-{% for name in (dovecot_mail_plugins + (['quota'] if dovecot_quota_enabled else [])) | unique %}
+{% for __dovecot_plugin in (dovecot_mail_plugins + (['quota'] if dovecot_quota_enabled else [])) | unique %}
 mail_plugins {
-  {{ name }} = yes
+  {{ __dovecot_plugin }} = yes
 }
 {% endfor %}

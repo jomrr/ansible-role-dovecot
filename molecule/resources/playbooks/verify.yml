@@ -74,7 +74,7 @@
     - name: DOVECOT | Exercise PostgreSQL and local-part PAM identities
       ansible.builtin.include_role:
         name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
-      vars:
+      vars: &dovecot_postgres_pam
         dovecot_sql: '{{ hostvars[inventory_hostname].dovecot_sql | combine({''driver'': ''pgsql'', ''port'': 5432}) }}'
         dovecot_quota_full_tempfail: true
         dovecot_pam_username_format: localpart
@@ -91,28 +91,44 @@
         PYTHONPATH: /etc/dovecot-test
       changed_when: false
 
-    - name: DOVECOT | Verify the operator receives the native configuration error
+    - name: DOVECOT | Verify diagnostics for main and independent lookup changes
       when: inventory_hostname == ansible_play_hosts_all[0]
+      vars: *dovecot_postgres_pam
       block:
         - name: DOVECOT | Validate a candidate with an unknown setting
-          ansible.builtin.include_role:
-            name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
-            tasks_from: config
           vars:
+            __dovecot_expected_file: dovecot.conf
+            __dovecot_expected_error: 'Unknown setting: no_such_setting'
             dovecot_config: 'no_such_setting = private-fixture-value'
+          block: &dovecot_invalid_candidate
+            - name: DOVECOT | Apply the invalid candidate
+              ansible.builtin.include_role:
+                name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+                tasks_from: config
 
-        - name: DOVECOT | Fail if the invalid candidate was installed
-          ansible.builtin.fail:
-            msg: Invalid configuration was accepted.
+            - name: DOVECOT | Fail if the invalid candidate was installed
+              ansible.builtin.fail:
+                msg: Invalid configuration was accepted.
 
-      rescue:
-        - name: DOVECOT | Require the setting and line number without its value
-          ansible.builtin.assert:
-            that:
-              - ansible_failed_result.msg is search('line [0-9]+')
-              - "'Unknown setting: no_such_setting' in ansible_failed_result.msg"
-              - "'private-fixture-value' not in ansible_failed_result.msg"
-            quiet: true
+          rescue: &dovecot_rejected_candidate
+            - name: DOVECOT | Require the affected file and native error with the value redacted
+              ansible.builtin.assert:
+                that:
+                  - __dovecot_expected_file in ansible_failed_result.msg
+                  - ansible_failed_result.msg is search('line [0-9]+')
+                  - __dovecot_expected_error in ansible_failed_result.msg
+                  - "'private-fixture-value' not in ansible_failed_result.msg"
+                quiet: true
+
+        - name: DOVECOT | Validate a changed SQL include with the main configuration unchanged
+          vars:
+            __dovecot_expected_file: sql.conf.ext
+            __dovecot_expected_error: Invalid port number
+            dovecot_sql: >-
+              {{ hostvars[inventory_hostname].dovecot_sql
+                 | combine({'driver': 'mysql', 'port': 65536, 'password': 'private-fixture-value'}) }}
+          block: *dovecot_invalid_candidate
+          rescue: *dovecot_rejected_candidate
 
     - name: DOVECOT | Verify temporary LMTP and Postfix failure on the same full mailbox
       become: true
@@ -132,7 +148,9 @@
         stdin: '{{ __dovecot_ad_user_password }}'
       environment:
         KRB5CCNAME: FILE:/tmp/dovecot-test.ccache
-      changed_when: true
+      register: __dovecot_kinit
+      changed_when: __dovecot_kinit.rc == 0
+      failed_when: __dovecot_kinit.rc != 0
       no_log: true
 
     - name: DOVECOT | Cache the IMAP service ticket before the outage
@@ -144,7 +162,9 @@
           - imap/{{ inventory_hostname }}.mail.test
       environment:
         KRB5CCNAME: FILE:/tmp/dovecot-test.ccache
-      changed_when: true
+      register: __dovecot_service_ticket
+      changed_when: __dovecot_service_ticket.rc == 0
+      failed_when: __dovecot_service_ticket.rc != 0
 
 - name: DOVECOT | Introduce an external identity service outage
   hosts: dovecot_dc

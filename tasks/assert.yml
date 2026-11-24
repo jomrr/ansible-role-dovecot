@@ -2,10 +2,10 @@
 # role: dovecot
 # file: tasks/assert.yml
 
-- name: DOVECOT | Validate delivery and storage policy
+- name: assert | Validate delivery and storage policy
   ansible.builtin.assert:
     that:
-      - dovecot_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
+      - __dovecot_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
       - dovecot_postmaster_address is match('^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+$')
       - dovecot_mail_root is match('^/([a-zA-Z0-9._@+-]+/)*[a-zA-Z0-9._@+-]+$')
       - "'..' not in dovecot_mail_root.split('/')"
@@ -26,7 +26,28 @@
     quiet: true
     fail_msg: Check delivery addresses, unique accounts, storage IDs, absolute paths and Sieve dependencies.
 
-- name: DOVECOT | Require a mail transport for outgoing Sieve actions
+- name: assert | Inspect the parent before enabling per-user storage
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: "{{ dovecot_mail_root }}"
+    get_checksum: false
+    get_mime: false
+  register: __dovecot_storage_root
+  when: dovecot_mail_ownership == 'per_user'
+
+- name: assert | Require a trusted parent before provisioning mailbox homes
+  ansible.builtin.assert:
+    that:
+      - >-
+        not __dovecot_storage_root.stat.exists or
+        (__dovecot_storage_root.stat.isdir and __dovecot_storage_root.stat.uid == 0
+         and not __dovecot_storage_root.stat.wgrp and not __dovecot_storage_root.stat.woth)
+    quiet: true
+    fail_msg: Prepare a root-owned private storage tree or select shared ownership for an existing vmail deployment.
+  when: dovecot_mail_ownership == 'per_user'
+
+- name: assert | Require a mail transport for outgoing Sieve actions
   ansible.builtin.assert:
     that:
       - dovecot_sieve_max_redirects == 0
@@ -35,18 +56,20 @@
       Outgoing Sieve actions require dovecot_submission_host or dovecot_sieve_sendmail_enabled
       with an MTA that authorizes the mailbox UIDs.
     success_msg: Sieve filters locally. Set dovecot_submission_host to enable vacation replies.
+    quiet: true
   when: dovecot_sieve_enabled and not __dovecot_sieve_has_transport
 
-- name: DOVECOT | Bound the mailbox process identities
+- name: assert | Bound the mailbox process identities
   ansible.builtin.assert:
     that:
       - 1000 <= dovecot_first_valid_uid <= dovecot_last_valid_uid < 4294967295
       - 1000 <= dovecot_first_valid_gid <= dovecot_last_valid_gid < 4294967295
       - dovecot_users | selectattr('uid', 'defined') | map(attribute='uid') | unique | length == dovecot_users | length
     fail_msg: Reserve a non-system UID/GID range and assign each file mailbox a distinct numeric UID.
+    quiet: true
   when: dovecot_mail_ownership == 'per_user'
 
-- name: DOVECOT | Require in-range numeric file mailbox identities
+- name: assert | Require in-range numeric file mailbox identities
   ansible.builtin.assert:
     that:
       - __dovecot_mailbox.uid is integer and dovecot_first_valid_uid <= __dovecot_mailbox.uid <= dovecot_last_valid_uid
@@ -59,7 +82,7 @@
     label: "{{ __dovecot_mailbox.name }}"
   when: dovecot_mail_ownership == 'per_user'
 
-- name: DOVECOT | Validate shared mailbox ownership
+- name: assert | Validate shared mailbox ownership
   ansible.builtin.assert:
     that:
       - 1000 <= dovecot_mail_uid < 4294967295
@@ -67,9 +90,10 @@
       - dovecot_users | selectattr('uid', 'defined') | list | length == 0
       - dovecot_users | selectattr('gid', 'defined') | list | length == 0
     fail_msg: Shared mode uses dovecot_mail_uid and dovecot_mail_gid for all file accounts.
+    quiet: true
   when: dovecot_mail_ownership == 'shared'
 
-- name: DOVECOT | Require TLS material for network access
+- name: assert | Require TLS material for network access
   ansible.builtin.assert:
     that:
       - dovecot_tls_certificate is match('^/[^\s"{}]+$')
@@ -78,7 +102,7 @@
     fail_msg: IMAPS and ManageSieve require existing certificate and private-key files.
   when: dovecot_imap_enabled or dovecot_managesieve_enabled
 
-- name: DOVECOT | Validate mailbox identifiers before constructing home paths
+- name: assert | Validate mailbox identifiers before constructing home paths
   ansible.builtin.assert:
     that:
       - __dovecot_name is match('^[a-z0-9][a-z0-9._+-]*@[a-z0-9][a-z0-9.-]*[a-z0-9]$')
@@ -89,31 +113,18 @@
     loop_var: __dovecot_name
     label: "{{ __dovecot_name }}"
 
-- name: DOVECOT | Require hashed credentials or disabled login
+- name: assert | Require supported password hashes for mailbox and submission accounts
   ansible.builtin.assert:
-    that:
-      - >-
-        __dovecot_hash == '*' or
-        __dovecot_hash is match('^\{(SHA512-CRYPT|BLF-CRYPT|ARGON2ID)\}[^\s:]+$')
+    that: __dovecot_invalid_accounts | length == 0
     quiet: true
-    fail_msg: Use a supported Dovecot password hash or * to disable the file password.
-  loop: "{{ dovecot_users | map(attribute='password_hash') }}"
-  loop_control:
-    loop_var: __dovecot_hash
-  no_log: true
+    fail_msg: "Provide a supported password hash for {{ __dovecot_invalid_accounts | join(', ') }}. Only mailbox accounts may use *."
+  vars:
+    __dovecot_hash_pattern: '^\{(SHA512-CRYPT|BLF-CRYPT|ARGON2ID)\}[^\s:]+$'
+    __dovecot_invalid_accounts: >-
+      {{ ((dovecot_users | rejectattr('password_hash', 'equalto', '*') | list) + dovecot_sasl_users)
+         | rejectattr('password_hash', 'match', __dovecot_hash_pattern) | map(attribute='name') | list }}
 
-- name: DOVECOT | Require password hashes for submission-only identities
-  ansible.builtin.assert:
-    that:
-      - __dovecot_hash is match('^\{(SHA512-CRYPT|BLF-CRYPT|ARGON2ID)\}[^\s:]+$')
-    quiet: true
-    fail_msg: Submission-only accounts require a supported Dovecot password hash.
-  loop: "{{ dovecot_sasl_users | map(attribute='password_hash') }}"
-  loop_control:
-    loop_var: __dovecot_hash
-  no_log: true
-
-- name: DOVECOT | Validate PAM identity patterns
+- name: assert | Validate PAM identity patterns
   ansible.builtin.assert:
     that:
       - __dovecot_pattern is match('^!?[a-z0-9*?._+@-]+$')
@@ -123,15 +134,15 @@
     loop_var: __dovecot_pattern
     label: "{{ __dovecot_pattern }}"
 
-- name: DOVECOT | Validate the external Kerberos service identity
+- name: assert | Validate the external Kerberos service identity
   ansible.builtin.assert:
     that:
       - dovecot_krb5_keytab is match('^/[^\s"{}]+$')
-      - dovecot_gssapi_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
+      - __dovecot_gssapi_hostname is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
     quiet: true
   when: dovecot_gssapi_enabled
 
-- name: DOVECOT | Require a local socket or a TLS-verified SQL host and explicit queries
+- name: assert | Require a local socket or a TLS-verified SQL host and explicit queries
   ansible.builtin.assert:
     that:
       - dovecot_sql.host is match('^([a-zA-Z0-9][a-zA-Z0-9.-]*|/([a-zA-Z0-9_@.-]+/)*[a-zA-Z0-9_@.-]+)$')
@@ -146,7 +157,7 @@
     quiet: true
   when: dovecot_sql_enabled
 
-- name: DOVECOT | Validate SQL credential serialization
+- name: assert | Validate SQL credential serialization
   ansible.builtin.assert:
     that:
       - dovecot_sql.host.startswith('/') or dovecot_sql.password | default('') | length > 0
@@ -155,7 +166,7 @@
   when: dovecot_sql_enabled
   no_log: true
 
-- name: DOVECOT | Require explicit directory mailbox eligibility and trusted TLS
+- name: assert | Require explicit directory mailbox eligibility and trusted TLS
   ansible.builtin.assert:
     that:
       - dovecot_ldap.uris | length > 0
@@ -168,7 +179,7 @@
     quiet: true
   when: dovecot_ldap_enabled
 
-- name: DOVECOT | Require LDAPS directory endpoints
+- name: assert | Require LDAPS directory endpoints
   ansible.builtin.assert:
     that:
       - __dovecot_uri is match('^ldaps://[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/?$')
@@ -179,7 +190,7 @@
     label: "{{ __dovecot_uri }}"
   when: dovecot_ldap_enabled
 
-- name: DOVECOT | Require mailbox enumeration for managed external homes
+- name: assert | Require mailbox enumeration for managed external homes
   ansible.builtin.assert:
     that:
       - not dovecot_sql_enabled or not dovecot_sql.user_query or dovecot_sql.iterate_query | length > 0
@@ -189,7 +200,7 @@
     quiet: true
   when: __dovecot_provision
 
-- name: DOVECOT | Validate service endpoints and quotas
+- name: assert | Validate service endpoints and quotas
   ansible.builtin.assert:
     that:
       - 0 < dovecot_imaps_port <= 65535 and 0 < dovecot_managesieve_port <= 65535
@@ -206,7 +217,7 @@
       - dovecot_users | selectattr('quota_storage_size', 'defined') | map(attribute='quota_storage_size') | select('lt', 0) | list | length == 0
     quiet: true
 
-- name: DOVECOT | Validate additional server names and certificate paths
+- name: assert | Validate additional server names and certificate paths
   ansible.builtin.assert:
     that:
       - __dovecot_cert.name is match('^[a-zA-Z0-9][a-zA-Z0-9.-]*$')
@@ -218,7 +229,7 @@
     loop_var: __dovecot_cert
     label: "{{ __dovecot_cert.name }}"
 
-- name: DOVECOT | Validate native service setting names
+- name: assert | Validate native service setting names
   ansible.builtin.assert:
     that:
       - __dovecot_service.value is mapping
@@ -229,7 +240,7 @@
     loop_var: __dovecot_service
     label: "{{ __dovecot_service.key }}"
 
-- name: DOVECOT | Require a dedicated unprivileged quota warning service
+- name: assert | Require a dedicated unprivileged quota warning service
   ansible.builtin.assert:
     that:
       - dovecot_quota_warning_program is match('^/[a-zA-Z0-9._/-]+$')
@@ -239,16 +250,15 @@
     quiet: true
   when: dovecot_quota_warning_thresholds | length > 0
 
-- name: DOVECOT | Resolve the quota warning account through NSS
+- name: assert | Resolve the quota warning account through NSS
   ansible.builtin.getent:
     database: passwd
     key: "{{ dovecot_quota_warning_user }}"
-  register: __dovecot_warning_account
   when: dovecot_quota_warning_thresholds | length > 0
 
-- name: DOVECOT | Reject a quota warning account with UID zero
+- name: assert | Reject a quota warning account with UID zero
   ansible.builtin.assert:
-    that: (__dovecot_warning_account.ansible_facts.getent_passwd.values() | first)[1] | int > 0
+    that: (ansible_facts.getent_passwd.values() | first)[1] | int > 0
     fail_msg: The quota warning program requires a non-root UID.
     quiet: true
   when: dovecot_quota_warning_thresholds | length > 0

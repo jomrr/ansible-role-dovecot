@@ -87,7 +87,9 @@
   become_user: root
   ansible.builtin.command:
     argv: [postconf, -M, 'submission/inet=submission inet n - n - - smtpd']
-  changed_when: true
+  register: __dovecot_submission_listener
+  changed_when: __dovecot_submission_listener.rc == 0
+  failed_when: __dovecot_submission_listener.rc != 0
 
 - name: DOVECOT | Add the loopback Sieve reinjection listener
   become: true
@@ -100,7 +102,9 @@
         127.0.0.1:10025/inet=127.0.0.1:10025 inet n - n - - smtpd
         -o smtpd_tls_security_level=none -o smtpd_sasl_auth_enable=no
         -o smtpd_relay_restrictions=reject_unauth_destination
-  changed_when: true
+  register: __dovecot_reinjection_listener
+  changed_when: __dovecot_reinjection_listener.rc == 0
+  failed_when: __dovecot_reinjection_listener.rc != 0
 
 - name: DOVECOT | Start the submission fixture
   become: true

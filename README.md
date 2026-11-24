@@ -96,12 +96,6 @@ Type: `str`. Required: `false`.
 Hostname used in delivery greetings and generated messages. Defaults to the host
 FQDN, with the inventory name as fallback.
 
-Default:
-
-```yaml
-dovecot_hostname: '{{ ansible_facts.fqdn | default(inventory_hostname) }}'
-```
-
 ### `dovecot_postmaster_address`
 
 Type: `str`. Required: `true`.
@@ -427,12 +421,13 @@ dovecot_managesieve_enabled: false
 
 Type: `bool`. Required: `false`.
 
-Back up the managed main configuration before replacement.
+Back up managed files before replacement, except authentication and lookup
+credentials.
 
 Default:
 
 ```yaml
-dovecot_backup: false
+dovecot_backup: true
 ```
 
 ### `dovecot_sasl_users`
@@ -541,13 +536,8 @@ dovecot_krb5_keytab: /etc/dovecot/dovecot.keytab
 
 Type: `str`. Required: `false`.
 
-Exact hostname registered in the IMAP and SMTP service principals.
-
-Default:
-
-```yaml
-dovecot_gssapi_hostname: '{{ dovecot_hostname }}'
-```
+Hostname registered in the IMAP and SMTP service principals. Defaults to the
+effective Dovecot hostname.
 
 ### `dovecot_sql_enabled`
 
@@ -1069,8 +1059,8 @@ dovecot_config: ''
 
 ## Managed Files
 
-- `/etc/dovecot/dovecot.conf` Complete managed configuration; packaged conf.d
-  includes are not loaded.
+- `/etc/dovecot/dovecot.conf` Root-owned main configuration with mode 0600. It
+  includes the enabled lookup files.
 - `/etc/dovecot/users` File-backed mailbox password and user database,
   root:dovecot mode 0640; never backed up by this role.
 - `/etc/dovecot/sieve-{before,after,default}.sieve` Administrator scripts and
@@ -1101,8 +1091,8 @@ service state.
 
 ## Service Behavior
 
-The role validates the complete configuration, reloads Dovecot when settings
-change and enables the service.
+The role validates each changed configuration template before installing it and
+enables the Dovecot service.
 
 ### Handlers
 
@@ -1110,14 +1100,16 @@ change and enables the service.
   submission-only account leaves existing IMAP sessions connected. A reload for
   service settings can disconnect clients. Schedule changes to active mail
   storage and authentication policy accordingly.
-- The role restarts the master when the installed Dovecot packages change or
-  when taking over a host without an activation record. Schedule the first run
-  on a running server and package changes in a maintenance window.
-- The role compiles administrator Sieve scripts before activation. It records
-  the configuration and package revisions in /etc/dovecot/.ansible-activation
-  after the service manager reports successful activation. Following a failed
-  run, correct the error and rerun the role. Pending changes take effect even
-  when the configuration files already match the inventory.
+- The role compiles administrator Sieve scripts before activation and starts a
+  stopped service. A running master reloads changed settings. Activating a new
+  SQL or LDAP driver restarts Dovecot so its configuration process loads the
+  driver. Schedule this change when clients can reconnect. Changing credentials
+  or queries for an active driver requires only a reload. On first adoption, a
+  selected driver without a confirmed activation is treated as newly enabled.
+- After successful activation the role records the configuration revision and
+  selected lookup drivers in /etc/dovecot/.ansible-activation. Following an
+  interrupted run, correct the error and rerun the role to apply the pending
+  configuration.
 
 ## Security Notes
 
@@ -1160,15 +1152,11 @@ change and enables the service.
   script-selected recipients independently of the redirect limit. A nonempty
   allowlist replaces the role's extension set. Review active scripts that
   require a removed extension before upgrading.
-- Native doveconf validates candidate configuration. sievec validates
-  administrator scripts before replacement. These checks do not establish remote
-  certificate trust or successful end-to-end delivery.
-- When configuration validation fails, Ansible reports the line and recognized
-  parser error without echoing setting values. Root can read the full
-  diagnostic, including any rejected value, in /var/log/dovecot-config-error.log
-  on the managed host. The next successful configuration and service activation
-  removes this file, including when the correction restores the active
-  configuration.
+- Ansible validates the main configuration and each enabled SQL or LDAP
+  configuration with doveconf before replacing the file. It validates
+  administrator scripts with sievec. A rejected candidate stops the run before
+  activation. The failure message identifies the affected file, line and
+  recognized parser error while protecting setting values.
 - Dovecot considers same-address local connections secured and permits local
   ManageSieve authentication without TLS. This native exception also applies
   with ssl=required. Local Unix accounts are part of the trusted boundary; IMAPS
@@ -1295,10 +1283,14 @@ change and enables the service.
   to true. With the jomrr.postfix default of root-only local submission, use the
   SMTP endpoint. With neither transport configured, Sieve offers local filtering
   and the role rejects requests for outbound extensions or redirects.
-- The role owns the complete main configuration and ignores packaged snippets.
-  Review existing custom settings before adopting it. Configuration backups are
-  optional. After externally renewing certificates, validate the configuration
-  and reload Dovecot.
+- The role owns the complete main configuration. Review site-specific settings
+  before adopting it. By default, dovecot_backup saves previous versions of the
+  main configuration, administrator Sieve sources, provisioning program and
+  units, and the managed CE repository key. Account files and SQL or LDAP
+  credentials are excluded. If custom dovecot_config contains secrets, disable
+  dovecot_backup before replacing that file and manage access to any earlier
+  backups. After renewing certificates, validate the configuration and reload
+  Dovecot.
 - Enable dovecot_quota_enabled to count stored mail. Limits, grace and per-user
   quota_storage_size are in bytes, with zero storage limit meaning unlimited.
   IMAP publishes usage and the effective limit. SQL user queries can return

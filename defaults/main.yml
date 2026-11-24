@@ -2,10 +2,12 @@
 # role: dovecot
 # file: defaults/main.yml
 
+# ------------------------------------------------------------------------------
 # Server settings
+# ------------------------------------------------------------------------------
 
-# Hostname used in delivery greetings and generated messages.
-dovecot_hostname: '{{ ansible_facts.fqdn | default(inventory_hostname) }}'
+# Optional hostname for delivery greetings and generated messages, defaulting to the host FQDN.
+# dovecot_hostname: mail.example.com
 
 # Address receiving delivery error reports; required.
 # dovecot_postmaster_address: postmaster@example.com
@@ -14,10 +16,12 @@ dovecot_hostname: '{{ ansible_facts.fqdn | default(inventory_hostname) }}'
 dovecot_listen:
   - 127.0.0.1
 
-# Back up the managed main configuration before replacement.
-dovecot_backup: false
+# Back up managed files before replacement, except authentication and lookup credentials.
+dovecot_backup: true
 
+# ------------------------------------------------------------------------------
 # Mailbox storage and home provisioning
+# ------------------------------------------------------------------------------
 
 # Default mailbox format, with optional per-user overrides.
 # Choices: maildir, mbox, sdbox, mdbox
@@ -64,7 +68,9 @@ dovecot_home_interval: 300
 # Persistent SELinux file type for the mailbox tree on SELinux-enabled hosts.
 dovecot_selinux_type: mail_spool_t
 
+# ------------------------------------------------------------------------------
 # Accounts and authentication
+# ------------------------------------------------------------------------------
 
 # File-backed virtual accounts; removing an account preserves its stored mail.
 dovecot_users: []
@@ -94,8 +100,8 @@ dovecot_gssapi_enabled: false
 # Existing dedicated keytab readable by the Dovecot auth process.
 dovecot_krb5_keytab: /etc/dovecot/dovecot.keytab
 
-# Hostname in the IMAP and SMTP service principals.
-dovecot_gssapi_hostname: "{{ dovecot_hostname }}"
+# Optional hostname in the IMAP and SMTP service principals, defaulting to the Dovecot hostname.
+# dovecot_gssapi_hostname: mail.example.com
 
 # Authentication cache size in bytes. Zero disables caching.
 dovecot_auth_cache_size: 0
@@ -106,7 +112,9 @@ dovecot_auth_cache_ttl: 3600
 # Failed authentication cache lifetime in seconds when caching is enabled.
 dovecot_auth_cache_negative_ttl: 3600
 
+# ------------------------------------------------------------------------------
 # SQL and LDAP lookups
+# ------------------------------------------------------------------------------
 
 # Enable SQL password and mailbox lookups alongside the file and directory sources.
 dovecot_sql_enabled: false
@@ -139,7 +147,9 @@ dovecot_ldap:
   iterate_filter: ''
   iterate_user: '%{ldap:mail}'
 
+# ------------------------------------------------------------------------------
 # LMTP delivery and Postfix sockets
+# ------------------------------------------------------------------------------
 
 # Enable LMTP delivery on the private MTA socket.
 dovecot_lmtp_enabled: true
@@ -165,7 +175,9 @@ dovecot_recipient_delimiter: '+'
 # Allow delivery to create missing destination mailboxes.
 dovecot_lda_mailbox_autocreate: false
 
+# ------------------------------------------------------------------------------
 # IMAP
+# ------------------------------------------------------------------------------
 
 # Enable IMAPS on dovecot_imaps_port.
 dovecot_imap_enabled: false
@@ -177,12 +189,14 @@ dovecot_imap_addresses: []
 dovecot_imaps_port: 993
 
 # Optional IMAP connection limit per user and source IP address.
-dovecot_imap_max_userip_connections: null
+# dovecot_imap_max_userip_connections: 10
 
 # Optional IMAP IDLE notification interval in seconds.
-dovecot_imap_idle_notify_interval: null
+# dovecot_imap_idle_notify_interval: 120
 
+# ------------------------------------------------------------------------------
 # TLS
+# ------------------------------------------------------------------------------
 
 # Existing PEM certificate chain required for IMAPS or ManageSieve.
 dovecot_tls_certificate: ''
@@ -203,7 +217,9 @@ dovecot_tls_curve_list: ''
 # Additional certificates selected by TLS server name.
 dovecot_tls_sni: []
 
+# ------------------------------------------------------------------------------
 # Sieve filtering
+# ------------------------------------------------------------------------------
 
 # Enable Pigeonhole filtering during LMTP delivery.
 dovecot_sieve_enabled: true
@@ -238,7 +254,9 @@ dovecot_submission_host: ''
 # Allow local sendmail for Sieve when the SMTP endpoint is empty and the MTA authorizes the mailbox UIDs.
 dovecot_sieve_sendmail_enabled: false
 
+# ------------------------------------------------------------------------------
 # ManageSieve
+# ------------------------------------------------------------------------------
 
 # Enable ManageSieve on dovecot_managesieve_port with STARTTLS required for remote clients.
 dovecot_managesieve_enabled: false
@@ -249,7 +267,9 @@ dovecot_managesieve_addresses: []
 # ManageSieve port for STARTTLS clients.
 dovecot_managesieve_port: 4190
 
+# ------------------------------------------------------------------------------
 # Mailbox quotas
+# ------------------------------------------------------------------------------
 
 # Enforce count-based storage quota and advertise IMAP QUOTA when IMAPS is enabled.
 dovecot_quota_enabled: false
@@ -278,7 +298,9 @@ dovecot_quota_warning_program: ''
 # Unprivileged account running the quota warning program.
 dovecot_quota_warning_user: nobody
 
+# ------------------------------------------------------------------------------
 # Configuration extensions
+# ------------------------------------------------------------------------------
 
 # Additional installed mail plugins inherited by each protocol.
 dovecot_mail_plugins: []

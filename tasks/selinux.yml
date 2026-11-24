@@ -2,14 +2,7 @@
 # role: dovecot
 # file: tasks/selinux.yml
 
-- name: DOVECOT | Install SELinux management tools
-  become: true
-  become_user: root
-  ansible.builtin.package:
-    name: "{{ __dovecot_selinux_packages }}"
-    state: present
-
-- name: DOVECOT | Label explicitly selected nonstandard TCP listener ports
+- name: selinux | Label explicitly selected nonstandard TCP listener ports
   become: true
   become_user: root
   community.general.seport:
@@ -25,7 +18,7 @@
     label: "{{ __dovecot_listener.port }}/tcp"
   when: __dovecot_listener.custom
 
-- name: DOVECOT | Persist the mailbox file context
+- name: selinux | Persist the mailbox file context
   become: true
   become_user: root
   community.general.sefcontext:
@@ -34,7 +27,7 @@
     state: present
 
 # sefcontext registers the policy. Only restorecon reconciles labels on existing files.
-- name: DOVECOT | Apply the mailbox context to existing storage
+- name: selinux | Apply the mailbox context to existing storage
   become: true
   become_user: root
   ansible.builtin.command:
@@ -44,3 +37,4 @@
   register: __dovecot_restorecon
   check_mode: false
   changed_when: __dovecot_restorecon.stdout is search('(?im)^(relabeled |would relabel |restorecon reset )')
+  failed_when: __dovecot_restorecon.rc != 0

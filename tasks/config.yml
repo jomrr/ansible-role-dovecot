@@ -2,7 +2,7 @@
 # role: dovecot
 # file: tasks/config.yml
 
-- name: DOVECOT | Create the mail process groups for Sieve scripts and quota warnings
+- name: config | Create the mail process groups for Sieve scripts and quota warnings
   become: true
   become_user: root
   ansible.builtin.group:
@@ -12,9 +12,28 @@
   loop_control:
     loop_var: __dovecot_group
 
-- name: DOVECOT | Configure delivery and client access
+- name: config | Configure delivery and client access
   block:
-    - name: DOVECOT | Validate and install the candidate configuration
+    - name: config | Configure enabled lookup connections
+      become: true
+      become_user: root
+      ansible.builtin.template:
+        validate: "{{ __dovecot_validate_config }}"
+        backup: false
+        src: "{{ __dovecot_backend.name }}.conf.ext.j2"
+        dest: "/etc/dovecot/{{ __dovecot_backend.name }}.conf.ext"
+        owner: root
+        group: dovecot
+        mode: '0640'
+      loop: "{{ __dovecot_backends | selectattr('enabled') }}"
+      loop_control:
+        loop_var: __dovecot_backend
+        label: "{{ __dovecot_backend.name }}"
+      register: __dovecot_lookup_files
+      diff: false
+      no_log: true
+
+    - name: config | Validate and install the candidate configuration
       become: true
       become_user: root
       ansible.builtin.template:
@@ -22,7 +41,7 @@
         dest: /etc/dovecot/dovecot.conf
         owner: root
         group: root
-        mode: "{{ '0600' if dovecot_config else '0644' }}"
+        mode: '0600'
         backup: "{{ dovecot_backup }}"
         validate: "{{ __dovecot_validate_config }}"
       register: __dovecot_config_file
@@ -30,10 +49,21 @@
       no_log: true
 
   rescue:
-    - name: DOVECOT | Report the rejected candidate
-      ansible.builtin.import_tasks: config_error.yml
+    - name: config | Report the validation error without configuration values
+      ansible.builtin.fail:
+        msg: >-
+          {% for __dovecot_error in ansible_failed_result.results | default([ansible_failed_result]) if __dovecot_error.failed | default(true) %}
+          {{ __dovecot_error.__dovecot_backend.name ~ '.conf.ext' if __dovecot_error.__dovecot_backend is defined else 'dovecot.conf' }}:
+          {{ __dovecot_error.stderr | default('') | regex_findall(__dovecot_error_pattern) | map('join', ' ') | join(' ') | trim
+             or 'Could not validate or install the file.' }}
+          {% endfor %}
+      vars:
+        # Native errors can quote an entire rejected value. Expose only the line, setting name and error category.
+        __dovecot_error_pattern: >-
+          (?m)^doveconf: (?:Fatal|Error): Error in configuration file [^\r\n]+? (line [0-9]+):
+          ((?:[a-zA-Z_][a-zA-Z0-9_]*: )?(?:Unknown (?:setting|section name): [a-zA-Z_][a-zA-Z0-9_]*|Invalid (?:port number|number|value|size|time interval)))?
 
-- name: DOVECOT | Remove disabled lookup credentials
+- name: config | Remove disabled lookup credentials
   become: true
   become_user: root
   ansible.builtin.file:

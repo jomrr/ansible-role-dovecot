@@ -2,41 +2,46 @@
 # role: dovecot
 # file: tasks/main.yml
 
-- name: DOVECOT | Gather missing host facts required by the role
-  ansible.builtin.setup:
-    gather_subset: ['!all', '!min', distribution, platform, pkg_mgr, selinux, service_mgr]
-  when: "['distribution', 'os_family', 'fqdn', 'pkg_mgr', 'selinux', 'service_mgr'] | difference(ansible_facts.keys()) | length > 0"
+- name: Load host facts and platform settings
+  ansible.builtin.import_tasks: set_vars.yml
 
-- name: DOVECOT | Load platform settings
-  ansible.builtin.include_vars: "{{ lookup('ansible.builtin.first_found', __dovecot_platform_files) }}"
-  vars:
-    __dovecot_platform_files:
-      files:
-        - "{{ ansible_facts.distribution }}.yml"
-        - "{{ ansible_facts.os_family }}.yml"
-      paths:
-        - "{{ role_path }}/vars"
-
-- name: DOVECOT | Validate deployment inputs
+- name: Validate deployment inputs
   ansible.builtin.import_tasks: assert.yml
 
-- name: DOVECOT | Install Dovecot 2.4 packages
+- name: Configure the vendor package repository when required
+  ansible.builtin.include_tasks: "{{ __dovecot_repository_file }}"
+  when: __dovecot_repository_file is defined
+
+- name: Install Dovecot 2.4 packages
   ansible.builtin.import_tasks: install.yml
 
-- name: DOVECOT | Prepare mailbox storage
+# Package versions include distribution epochs and revisions. The executable reports the upstream version.
+- name: Require an installed Dovecot 2.4 executable
+  ansible.builtin.command:
+    argv: [/usr/sbin/dovecot, --version]
+  register: __dovecot_version
+  changed_when: false
+  failed_when: __dovecot_version.rc != 0 or __dovecot_version.stdout is not match('^2[.]4[.]')
+  check_mode: false
+
+- name: Prepare mailbox storage
   ansible.builtin.import_tasks: storage.yml
 
-- name: DOVECOT | Manage file accounts
+- name: Manage file accounts
   ansible.builtin.import_tasks: accounts.yml
 
-- name: DOVECOT | Manage external lookup connections
-  ansible.builtin.import_tasks: lookups.yml
+- name: Identify previously activated lookup drivers before replacing their configuration
+  become: true
+  become_user: root
+  dovecot_activate:
+    operation: baseline
+  when: dovecot_sql_enabled or dovecot_ldap_enabled
 
-- name: DOVECOT | Configure delivery and client protocols
+- name: Configure delivery and client protocols
   ansible.builtin.import_tasks: config.yml
 
-- name: DOVECOT | Compile Sieve and activate the validated service
+- name: Compile Sieve and activate the validated service
   ansible.builtin.import_tasks: activation.yml
 
-- name: DOVECOT | Provision homes from active mailbox lookups
+- name: Provision homes from active mailbox lookups
   ansible.builtin.import_tasks: provision.yml

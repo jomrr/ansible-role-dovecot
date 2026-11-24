@@ -2,34 +2,40 @@
 # role: dovecot
 # file: tasks/accounts.yml
 
-- name: DOVECOT | Reserve local password identities before external authentication
+- name: accounts | Reserve local password identities before external authentication
   become: true
   become_user: root
   ansible.builtin.template:
     src: local-password-names.j2
+    backup: false
     dest: /etc/dovecot/local-password-names
     owner: root
     group: dovecot
     mode: '0640'
+  diff: false
 
-- name: DOVECOT | Write the private account database
+- name: accounts | Write the private account database
   become: true
   become_user: root
   ansible.builtin.template:
-    src: "users.j2"
+    src: users.j2
+    backup: false
     dest: /etc/dovecot/users
     owner: root
     group: dovecot
     mode: '0640'
+  diff: false
   no_log: true
 
-- name: DOVECOT | Write the private SMTP authentication database
+- name: accounts | Write the private SMTP authentication database
   become: true
   become_user: root
   ansible.builtin.template:
     src: sasl-users.j2
+    backup: false
     dest: /etc/dovecot/sasl-users
     owner: root
     group: dovecot
     mode: '0640'
+  diff: false
   no_log: true
