@@ -41,6 +41,29 @@
         executable: python3
       changed_when: false
 
+    - name: DOVECOT | Verify the operator receives the native configuration error
+      when: inventory_hostname == ansible_play_hosts_all[0]
+      block:
+        - name: DOVECOT | Validate a candidate with an unknown setting
+          ansible.builtin.include_role:
+            name: '{{ lookup(''ansible.builtin.env'', ''MOLECULE_PROJECT_DIRECTORY'') }}'
+            tasks_from: config
+          vars:
+            dovecot_config: 'no_such_setting = private-fixture-value'
+
+        - name: DOVECOT | Fail if the invalid candidate was installed
+          ansible.builtin.fail:
+            msg: Invalid configuration was accepted.
+
+      rescue:
+        - name: DOVECOT | Require the setting and line number without its value
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is search('line [0-9]+')
+              - "'Unknown setting: no_such_setting' in ansible_failed_result.msg"
+              - "'private-fixture-value' not in ansible_failed_result.msg"
+            quiet: true
+
     - name: DOVECOT | Verify temporary LMTP and Postfix failure on the same full mailbox
       become: true
       become_user: root

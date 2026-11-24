@@ -26,6 +26,11 @@
     - __dovecot_provision
     - not ansible_check_mode or not (__dovecot_home_tool.changed or __dovecot_config_file.changed)
 
+- name: DOVECOT | Report mailbox provisioning warnings
+  ansible.builtin.debug:
+    msg: "{{ __dovecot_homes.stderr_lines }}"
+  when: __dovecot_homes.stderr_lines | default([]) | length > 0
+
 - name: DOVECOT | Install periodic provisioning units
   become: true
   become_user: root

@@ -1142,6 +1142,10 @@ change and enables the service.
 - Native doveconf validates candidate configuration. sievec validates
   administrator scripts before replacement. These checks do not establish remote
   certificate trust or successful end-to-end delivery.
+- When configuration validation fails, Ansible reports the line and recognized
+  parser error without echoing setting values. The full diagnostic from the
+  latest failure is available to root in /var/log/dovecot-config-error.log on
+  the managed host. It can include a rejected value.
 - Dovecot considers same-address local connections secured and permits local
   ManageSieve authentication without TLS. This native exception also applies
   with ssl=required. Local Unix accounts are part of the trusted boundary; IMAPS
@@ -1201,7 +1205,12 @@ change and enables the service.
   missing homes with mode 0700. Existing external homes must already have the
   declared owner and mode. The helper uses trusted root-owned parent directories
   and refuses symlinks, conflicting owners, paths outside the root and
-  out-of-range IDs.
+  out-of-range IDs. A bad entry or an unsafe existing home is skipped and
+  reported in Ansible output or the timer journal. Other eligible homes are
+  provisioned. All records sharing a conflicting UID or overlapping home paths
+  are skipped. Check mode reports the same warnings and counts missing eligible
+  homes. Failure to enumerate the userdb, loss of all effective lookups to
+  backend errors, an unsafe mail root or a filesystem write error fails the run.
 - Timer mode also reconciles at dovecot_home_interval seconds (default 300).
   With none the operator provisions external homes. Supply iterate_query for an
   enabled SQL userdb and iterate_filter and iterate_user for LDAP. Match their

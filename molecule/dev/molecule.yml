@@ -113,7 +113,7 @@ provisioner:
           password_query: "SELECT username AS user, password FROM mailbox WHERE username = '%{user}' AND active = TRUE AND\
             \ password <> '*'"
           user_query: "SELECT username AS user, uid, gid FROM mailbox WHERE username = '%{user}' AND active = TRUE"
-          iterate_query: "SELECT username AS user FROM mailbox WHERE active = TRUE AND uid >= 70000 AND gid >= 70000"
+          iterate_query: "SELECT username AS user FROM mailbox WHERE active = TRUE"
         dovecot_ldap:
           uris:
             - "ldaps://dc-dovecot.mail.test"

@@ -93,6 +93,7 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(metadata.st_uid, pwd.getpwnam('postfix').pw_uid)
         root = MAIL_ROOT.stat()
         self.assertEqual((root.st_uid, stat.S_IMODE(root.st_mode)), (0, 0o711))
+        self.assertEqual(stat.S_IMODE((MAIL_ROOT / 'drift@mail.test').stat().st_mode), 0o750)
         self.assertEqual(stat.S_IMODE(Path(AUTH_PATH).stat().st_mode), 0o600)
         for filename in ('users', 'sasl-users', 'sql.conf.ext', 'ldap.conf.ext'):
             self.assertEqual(stat.S_IMODE((Path('/etc/dovecot') / filename).stat().st_mode), 0o640)

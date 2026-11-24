@@ -13,18 +13,25 @@
     loop_var: __dovecot_group
 
 - name: DOVECOT | Configure delivery and client access
-  become: true
-  become_user: root
-  ansible.builtin.template:
-    src: "dovecot.conf.j2"
-    dest: /etc/dovecot/dovecot.conf
-    owner: root
-    group: root
-    mode: "{{ '0600' if dovecot_config else '0644' }}"
-    backup: "{{ dovecot_backup }}"
-    validate: "{{ __dovecot_validate_config }}"
-  register: __dovecot_config_file
-  no_log: "{{ dovecot_config | length > 0 }}"
+  block:
+    - name: DOVECOT | Validate and install the candidate configuration
+      become: true
+      become_user: root
+      ansible.builtin.template:
+        src: dovecot.conf.j2
+        dest: /etc/dovecot/dovecot.conf
+        owner: root
+        group: root
+        mode: "{{ '0600' if dovecot_config else '0644' }}"
+        backup: "{{ dovecot_backup }}"
+        validate: "{{ __dovecot_validate_config }}"
+      register: __dovecot_config_file
+      diff: false
+      no_log: true
+
+  rescue:
+    - name: DOVECOT | Report the rejected candidate
+      ansible.builtin.import_tasks: config-error.yml
 
 - name: DOVECOT | Remove disabled lookup credentials
   become: true

@@ -2,16 +2,23 @@
 """Provision private mailbox homes using Dovecot's effective LMTP identities."""
 
 import argparse
+import errno
 import fcntl
 import os
+import re
 import stat
 import subprocess
 import sys
+from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, NamedTuple
 
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+# doveadm also uses EX_TEMPFAIL when Dovecot rejects one user's effective identity.
+DENIED_ID = re.compile(
+    r"Mail access (?:for users with (?:UID|GID) [0-9]+ not permitted|not allowed for root)\b"
+)
 
 
 class Mailbox(NamedTuple):
@@ -25,33 +32,64 @@ class Mailbox(NamedTuple):
 
 def doveadm(*args: str) -> list[str]:
     """Accept only complete output from a successful lookup or iteration."""
-    return subprocess.check_output(["/usr/bin/doveadm", *args], text=True).splitlines()
+    output = subprocess.check_output(["/usr/bin/doveadm", *args], text=True, stderr=subprocess.PIPE)
+    return output.splitlines()
 
 
-def records(args: argparse.Namespace) -> list[Mailbox]:
-    """Validate the identity snapshot before granting ownership of any path."""
-    homes: dict[Path, Mailbox] = {}
-    owners: dict[int, Mailbox] = {}
-    for login in sorted(set(doveadm("user", "*"))):
-        if not login or login.startswith("-") or any(c.isspace() or c in "/*?\\" for c in login):
-            raise ValueError(f"invalid iterated login {login!r}")
-        result = doveadm("-f", "tab", "user", "-x", "service=lmtp", login)
-        if not result or result[0] != "field\tvalue":
-            raise ValueError(f"unexpected userdb output for {login!r}")
+def mailbox(login: str, root: Path) -> Mailbox:
+    """Read the canonical effective delivery identity for one literal login."""
+    if not login or login.startswith("-") or any(c.isspace() or c in "/*?\\" for c in login):
+        raise ValueError("invalid iterated login")
+    result = doveadm("-f", "tab", "user", "-x", "service=lmtp", login)
+    if not result or result[0] != "field\tvalue":
+        raise ValueError("unexpected userdb output")
+    try:
         fields = dict(line.split("\t", 1) for line in result[1:])
-        path = Path(fields["home"]).relative_to(args.root)
+        path = Path(fields["home"]).relative_to(root)
         uid, gid = int(fields["uid"]), int(fields["gid"])
-        if not path.parts or ".." in path.parts or not args.uid_min <= uid <= args.uid_max:
-            raise ValueError(f"invalid home or UID for {login!r}")
-        if not args.gid_min <= gid <= args.gid_max:
-            raise ValueError(f"out-of-range GID for {login!r}")
-        box = Mailbox(fields.get("user", login), path, uid, gid)
-        if homes.setdefault(path, box) != box or owners.setdefault(uid, box) != box:
-            raise ValueError(f"conflicting home or UID for {login!r}")
-    for path in homes:
-        if any(parent in homes for parent in path.parents):
-            raise ValueError(f"home nested inside another mailbox: {path}")
-    return list(homes.values())
+    except (KeyError, ValueError) as error:
+        raise ValueError("invalid home, UID or GID in userdb") from error
+    if not path.parts or ".." in path.parts:
+        raise ValueError("home must be beneath the mail root")
+    return Mailbox(fields.get("user", login), path, uid, gid)
+
+
+def skipped(name: str, reason: object) -> None:
+    """Report an isolated entry to the role or the timer journal."""
+    print(f"Skipping mailbox {name!r}: {reason}", file=sys.stderr)
+
+
+def records(args: argparse.Namespace) -> Iterator[Mailbox]:
+    """Exclude every participant in a conflict before assigning any ownership."""
+    boxes: set[Mailbox] = set()
+    lookup_failure: subprocess.CalledProcessError | None = None
+    for login in sorted(set(doveadm("user", "*"))):
+        try:
+            boxes.add(mailbox(login, args.root))
+        except ValueError as error:
+            skipped(login, error)
+        except subprocess.CalledProcessError as error:
+            denial = DENIED_ID.search(error.stderr or "")
+            reason = denial[0] if denial else f"doveadm user exited with status {error.returncode}"
+            skipped(login, reason)
+            if denial is None and error.returncode != os.EX_NOUSER:
+                lookup_failure = error
+    if not boxes and lookup_failure is not None:
+        raise lookup_failure
+
+    homes = Counter(box.path for box in boxes)
+    owners = Counter(box.uid for box in boxes)
+    parents = {parent for box in boxes for parent in box.path.parents if parent in homes}
+    for box in sorted(boxes):
+        if homes[box.path] > 1 or owners[box.uid] > 1:
+            skipped(box.name, "conflicting home or UID")
+        elif box.path in parents or any(parent in homes for parent in box.path.parents):
+            skipped(box.name, "overlapping mailbox homes")
+        elif not (args.uid_min <= box.uid <= args.uid_max
+                  and args.gid_min <= box.gid <= args.gid_max):
+            skipped(box.name, f"UID {box.uid} or GID {box.gid} outside permitted range")
+        else:
+            yield box
 
 
 def trusted(fd: int) -> None:
@@ -104,7 +142,10 @@ def provision(parent: int, box: Mailbox, check: bool) -> bool:
     try:
         info = os.fstat(fd)
         if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (box.uid, box.gid, 0o700):
-            raise ValueError(f"existing home {box.path} has unexpected owner or permissions")
+            raise ValueError(
+                f"existing home {str(box.path)!r} has UID {info.st_uid}, GID {info.st_gid} "
+                f"and mode {stat.S_IMODE(info.st_mode):04o}, expected {box.uid}:{box.gid} and 0700"
+            )
     finally:
         os.close(fd)
     return False
@@ -125,6 +166,12 @@ def reconcile(args: argparse.Namespace) -> int:
                     if not args.check:
                         raise
                     count += 1
+                except ValueError as error:
+                    skipped(box.name, error)
+                except OSError as error:
+                    if error.errno not in (errno.ENOTDIR, errno.ELOOP, errno.ENAMETOOLONG):
+                        raise
+                    skipped(box.name, error.strerror)
             return count
     finally:
         os.close(anchor)
