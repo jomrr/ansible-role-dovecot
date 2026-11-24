@@ -26,6 +26,17 @@
     quiet: true
     fail_msg: Check delivery addresses, unique accounts, storage IDs, absolute paths and Sieve dependencies.
 
+- name: DOVECOT | Require a mail transport for outgoing Sieve actions
+  ansible.builtin.assert:
+    that:
+      - dovecot_sieve_max_redirects == 0
+      - dovecot_sieve_extensions | intersect(['vacation', 'vacation-seconds', 'reject', 'ereject', 'enotify', 'vnd.dovecot.report']) | length == 0
+    fail_msg: >-
+      Outgoing Sieve actions require dovecot_submission_host or dovecot_sieve_sendmail_enabled
+      with an MTA that authorizes the mailbox UIDs.
+    success_msg: Sieve filters locally. Set dovecot_submission_host to enable vacation replies.
+  when: dovecot_sieve_enabled and not __dovecot_sieve_has_transport
+
 - name: DOVECOT | Bound the mailbox process identities
   ansible.builtin.assert:
     that:

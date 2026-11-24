@@ -1,6 +1,7 @@
 {% if dovecot_lmtp_enabled %}
 service lmtp {
-  unix_listener {{ dovecot_lmtp_socket }} {
+  unix_listener lmtp {
+    path = {{ dovecot_lmtp_socket | to_json }}
     mode = 0600
     user = {{ dovecot_socket_user | to_json }}
     group = {{ dovecot_socket_group | to_json }}

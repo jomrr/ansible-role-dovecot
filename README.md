@@ -400,7 +400,8 @@ dovecot_sieve_before: ''
 
 Type: `int`. Required: `false`.
 
-Maximum Sieve redirects per message; zero prohibits forwarding.
+Maximum redirect actions per message. A positive limit requires a Sieve mail
+transport.
 
 Default:
 
@@ -677,6 +678,19 @@ Default:
 dovecot_submission_host: ''
 ```
 
+### `dovecot_sieve_sendmail_enabled`
+
+Type: `bool`. Required: `false`.
+
+Allow local sendmail for Sieve when the SMTP endpoint is empty and the MTA
+authorizes the mailbox UIDs.
+
+Default:
+
+```yaml
+dovecot_sieve_sendmail_enabled: false
+```
+
 ### `dovecot_imap_addresses`
 
 Type: `list`. Required: `false`.
@@ -801,7 +815,8 @@ dovecot_sieve_default: ''
 
 Type: `list`. Required: `false`.
 
-Personal Sieve extension allowlist. An empty list selects Pigeonhole defaults.
+Personal Sieve extension allowlist. An empty list enables local filters and,
+with a transport, vacation and reject.
 
 Default:
 
@@ -1110,13 +1125,15 @@ change and enables the service.
   patch status of a distribution package; vendors backport fixes without
   changing the upstream version.
 - CVE-2026-42007 affects editheader in unpatched Pigeonhole releases. Keep the
-  native default with editheader disabled or select a dovecot_sieve_extensions
+  role default with editheader disabled or select a dovecot_sieve_extensions
   allowlist containing only the required extensions. Check vendor backports
   before enabling editheader. Keep lda_mailbox_autocreate disabled with ACLs
   until vendor fixes for CVE-2026-40204 are installed.
-- LMTP has no TCP listener. Postfix LMTP and SASL sockets use mode 0600 and the
-  configured MTA owner. Network client services are disabled by default and bind
-  only to loopback when enabled.
+- Dovecot binds its single LMTP listener to dovecot_lmtp_socket. Only the
+  configured MTA owner has access (0600). This replaces the packaged listener
+  under /run/dovecot. LMTP over TCP is disabled. The Postfix SASL socket also
+  uses mode 0600. Network client services are disabled by default and bind only
+  to loopback when enabled.
 - IMAP port 143 is disabled. The default ports are 993 for IMAPS and 4190 for
   remote ManageSieve with STARTTLS. TLS 1.2 is the minimum, with TLS 1.3
   selectable. Plaintext password authentication over unencrypted remote
@@ -1135,10 +1152,13 @@ change and enables the service.
   authoritative allocation system and retain IDs until archived data can no
   longer be accessed. With idmap ad, align the Winbind range with the published
   uidNumber/gidNumber attributes and the Dovecot limits.
-- Sieve redirects are disabled by default to prevent unintended forwarding.
-  Standard Sieve extensions are available; external-program plugins are not
-  enabled. Personal scripts belong to users and are never overwritten by the
-  role.
+- The default Sieve policy permits local filtering, including fileinto and
+  imap4flags. The redirect limit is zero. Even with a mail transport, personal
+  scripts require an explicit dovecot_sieve_extensions allowlist to use enotify
+  or vnd.dovecot.report. Granting either extension allows messages to
+  script-selected recipients independently of the redirect limit. A nonempty
+  allowlist replaces the role's extension set. Review active scripts that
+  require a removed extension before upgrading.
 - Native doveconf validates candidate configuration. sievec validates
   administrator scripts before replacement. These checks do not establish remote
   certificate trust or successful end-to-end delivery.
@@ -1254,13 +1274,21 @@ change and enables the service.
   lmtp:unix:private/dovecot-lmtp and postfix_dovecot_auth_socket: private/auth.
   Configure virtual domains, mailbox recipients and sender ownership in that
   role. System mail recipients must be aliased to configured virtual accounts.
-- ManageSieve stores personal scripts under ~/sieve. dovecot_sieve_before runs
-  first, dovecot_sieve_default applies if no personal script is active, and
-  dovecot_sieve_after runs at the end of the sequence. A terminal stop prevents
-  the following scripts from running. Set dovecot_submission_host to a dedicated
-  protected SMTP endpoint for vacation, reject and redirect. A loopback endpoint
-  must restrict local callers and outbound relay rights. With an empty value
-  Dovecot uses its native sendmail path.
+- ManageSieve stores user-owned personal scripts under ~/sieve. The role
+  preserves these scripts. dovecot_sieve_before runs first,
+  dovecot_sieve_default applies if no personal script is active, and
+  dovecot_sieve_after runs last. A terminal stop ends the sequence.
+- To enable vacation and reject with the default extension list, set
+  dovecot_submission_host to an existing SMTP endpoint. For example, use
+  127.0.0.1:10025 when the MTA already provides a listener there and restricts
+  local callers and relay destinations. Set dovecot_sieve_max_redirects
+  separately to permit redirects. With a custom allowlist, include the reply
+  extensions you need.
+- Sites that deliberately authorize mailbox UIDs to submit via local sendmail
+  can leave dovecot_submission_host empty and set dovecot_sieve_sendmail_enabled
+  to true. With the jomrr.postfix default of root-only local submission, use the
+  SMTP endpoint. With neither transport configured, Sieve offers local filtering
+  and the role rejects requests for outbound extensions or redirects.
 - The role owns the complete main configuration and ignores packaged snippets.
   Review existing custom settings before adopting it. Configuration backups are
   optional. After externally renewing certificates, validate the configuration

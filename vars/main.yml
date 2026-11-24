@@ -33,6 +33,30 @@ __dovecot_sieve_scripts:
   after: "{{ dovecot_sieve_after }}"
   default: "{{ dovecot_sieve_default }}"
 
+__dovecot_sieve_has_transport: "{{ dovecot_submission_host | length > 0 or dovecot_sieve_sendmail_enabled }}"
+__dovecot_sieve_local_extensions:
+  - body
+  - comparator-i;ascii-numeric
+  - copy
+  - date
+  - duplicate
+  - encoded-character
+  - envelope
+  - environment
+  - extracttext
+  - fileinto
+  - foreverypart
+  - ihave
+  - imap4flags
+  - include
+  - index
+  - mailbox
+  - mime
+  - regex
+  - relational
+  - subaddress
+  - variables
+
 __dovecot_access_groups: >-
   {{ (['dovecot-sieve'] if (dovecot_mail_ownership == 'per_user' and __dovecot_sieve_scripts.values() | select | list) else [])
      + (['dovecot-quota'] if dovecot_quota_enabled and dovecot_quota_warning_thresholds else []) }}

@@ -158,7 +158,8 @@ argument_specs:
         default: ''
       dovecot_sieve_max_redirects:
         type: int
-        description: Maximum Sieve redirects per message; zero prohibits forwarding.
+        description: Maximum redirect actions per message. A positive limit requires a Sieve
+          mail transport.
         default: 0
       dovecot_managesieve_enabled:
         type: bool
@@ -383,6 +384,11 @@ argument_specs:
         description: SMTP endpoint (host or host:port) for messages generated during Sieve
           delivery.
         default: ''
+      dovecot_sieve_sendmail_enabled:
+        type: bool
+        description: Allow local sendmail for Sieve when the SMTP endpoint is empty and
+          the MTA authorizes the mailbox UIDs.
+        default: false
       dovecot_imap_addresses:
         type: list
         description: IMAPS bind addresses, defaulting to dovecot_listen.
@@ -443,8 +449,8 @@ argument_specs:
         default: ''
       dovecot_sieve_extensions:
         type: list
-        description: Personal Sieve extension allowlist. An empty list selects Pigeonhole
-          defaults.
+        description: Personal Sieve extension allowlist. An empty list enables local filters
+          and, with a transport, vacation and reject.
         default: []
         elements: str
       dovecot_sieve_max_script_size:

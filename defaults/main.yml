@@ -217,10 +217,10 @@ dovecot_sieve_default: ''
 # Administrator Sieve source executed after the personal or default script.
 dovecot_sieve_after: ''
 
-# Personal Sieve extension allowlist. An empty list selects Pigeonhole defaults.
+# Personal Sieve extension allowlist. An empty list enables local filters and, with a transport, vacation and reject.
 dovecot_sieve_extensions: []
 
-# Maximum Sieve redirects per message; zero prohibits forwarding.
+# Maximum redirect actions per message. A positive limit requires a Sieve mail transport.
 dovecot_sieve_max_redirects: 0
 
 # Maximum Sieve script size in bytes.
@@ -234,6 +234,9 @@ dovecot_sieve_quota_storage_size: 5242880
 
 # SMTP endpoint (host or host:port) for messages generated during Sieve delivery.
 dovecot_submission_host: ''
+
+# Allow local sendmail for Sieve when the SMTP endpoint is empty and the MTA authorizes the mailbox UIDs.
+dovecot_sieve_sendmail_enabled: false
 
 # ManageSieve
 

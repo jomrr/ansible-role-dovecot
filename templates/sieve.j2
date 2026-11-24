@@ -18,9 +18,8 @@ sieve_script {{ type }} {
   path = /etc/dovecot/sieve-{{ type }}.sieve
 }
 {% endfor %}
-{% if dovecot_sieve_extensions %}
-sieve_extensions = {{ dovecot_sieve_extensions | join(' ') | to_json }}
-{% endif %}
+{% set replies = ['vacation', 'reject'] if __dovecot_sieve_has_transport else [] %}
+sieve_extensions = {{ (dovecot_sieve_extensions or (__dovecot_sieve_local_extensions + replies)) | join(' ') | to_json }}
 sieve_max_redirects = {{ dovecot_sieve_max_redirects }}
 sieve_max_script_size = {{ dovecot_sieve_max_script_size }}B
 sieve_quota_script_count = {{ dovecot_sieve_quota_script_count }}

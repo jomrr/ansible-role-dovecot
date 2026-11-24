@@ -88,6 +88,7 @@ class SecurityTests(unittest.TestCase):
 
     def test_private_permissions(self) -> None:
         """LMTP and mailbox data retain private ownership and permissions."""
+        self.assertFalse(Path('/run/dovecot/lmtp').exists())
         metadata = Path(LMTP_PATH).stat()
         self.assertEqual(stat.S_IMODE(metadata.st_mode), 0o600)
         self.assertEqual(metadata.st_uid, pwd.getpwnam('postfix').pw_uid)
@@ -195,7 +196,12 @@ class ClientTests(unittest.TestCase):
             with tls_context().wrap_socket(client, server_hostname='localhost') as secure:
                 with secure.makefile('rwb', buffering=0) as stream:
                     # STARTTLS sends a fresh capability greeting automatically.
-                    self.assertIn(b'SASL', sieve_response(stream))
+                    greeting = sieve_response(stream)
+                    self.assertIn(b'SASL', greeting)
+                    extensions = next(
+                        line for line in greeting.splitlines() if line.startswith(b'"SIEVE" ')
+                    )
+                    self.assertNotIn(b'enotify', extensions.split(b'"')[3].split())
                     stream.write(b'AUTHENTICATE "PLAIN" "' + token + b'"\r\n')
                     self.assertRegex(sieve_response(stream), b'^OK')
                     script = (
