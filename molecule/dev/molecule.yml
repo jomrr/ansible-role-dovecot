@@ -42,6 +42,11 @@ provisioner:
         dovecot_quota_grace: 8192
         dovecot_quota_status_enabled: true
         dovecot_submission_host: "127.0.0.1:10025"
+        dovecot_config: |
+          submission_ssl = starttls
+          import_environment {
+            SSL_CERT_FILE = /etc/dovecot-test/server.pem
+          }
         dovecot_imap_enabled: true
         dovecot_managesieve_enabled: true
         dovecot_tls_certificate: "/etc/dovecot-test/server.pem"
@@ -92,6 +97,7 @@ provisioner:
           }
         dovecot_pam_enabled: true
         dovecot_pam_service: "dovecot-test-winbind"
+        dovecot_pam_group: "Mail Submitters"
         dovecot_pam_username_filter:
           - "*@mail.test"
         dovecot_auth_worker_user: "doveauth"

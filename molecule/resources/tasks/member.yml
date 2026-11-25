@@ -90,28 +90,17 @@
     content: "{{ __dovecot_directory_ca.content | b64decode }}"
     mode: '0644'
 
-- name: DOVECOT | Create a genuine local Unix account for pam_unix
+- name: Create a local Unix account in the PAM login group
   become: true
   become_user: root
   ansible.builtin.user:
     name: pamlocal
     uid: 6001
+    group: '70110'
     create_home: false
     shell: /bin/bash
     password: '$6$dovecotfixture$nJZZj3C.o5vFWgDGA0iKfaH1Nkh.X7YmBW/XxbdKjqMJFQlqoK68wFo4OjGZu1AE8epNkeV4h/27kwps1UGE..'
   no_log: true
-
-- name: DOVECOT | Supply a dedicated unprivileged Winbind PAM service for the fixture
-  become: true
-  become_user: root
-  ansible.builtin.copy:
-    dest: /etc/pam.d/dovecot-test-winbind
-    content: |
-      auth required pam_winbind.so
-      account required pam_winbind.so
-    owner: root
-    group: root
-    mode: '0644'
 
 - name: DOVECOT | Complete the container boot transition before PAM login tests
   become: true

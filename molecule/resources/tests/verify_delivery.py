@@ -366,6 +366,11 @@ class LocalPamTests(unittest.TestCase):
         with imap_client() as client:
             client.login("pamlocal@mail.test", PASSWORD)
             self.assertEqual(client.select("INBOX")[0], "OK")
+        with submission_client() as smtp:
+            with self.assertRaises(smtplib.SMTPAuthenticationError) as denied:
+                authenticate_submission(smtp, "outsider@mail.test", AD_PASSWORD)
+            self.assertEqual(denied.exception.smtp_code, 535)
+            authenticate_submission(smtp, "pamlocal@mail.test", PASSWORD)
         for username, password in (
             ("pamlocal@mail.test", "incorrect-password"),
             ("pamlocal", PASSWORD),

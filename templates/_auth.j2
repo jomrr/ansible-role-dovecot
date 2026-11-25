@@ -45,6 +45,8 @@ passdb pam-qualified {
 {% endif %}
 passdb pam {
   driver = pam
+  # Check group membership and host account policy on every PAM login.
+  use_cache = no
   username_filter = {{ dovecot_pam_username_filter | join(' ') }}
   mechanisms_filter = plain login
   service_name = {{ dovecot_pam_service }}

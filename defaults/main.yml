@@ -78,17 +78,20 @@ dovecot_users: []
 # Password-only accounts without mailbox records, restricted to SMTP authentication.
 dovecot_sasl_users: []
 
-# Enable password authentication through an externally managed PAM service.
+# Enable password and account checks through the Dovecot PAM service.
 dovecot_pam_enabled: false
 
-# Existing PAM service used for authentication and account checks.
+# Dedicated PAM service file managed when PAM is enabled.
 dovecot_pam_service: dovecot
+
+# NSS group authorized to authenticate through PAM, required with local-part mapping.
+dovecot_pam_group: ''
 
 # Identity passed to PAM; the original full login is restored afterwards.
 # Choices: full, localpart
 dovecot_pam_username_format: full
 
-# Native username patterns selecting PAM identities; empty permits all otherwise eligible names.
+# Native Dovecot username patterns selecting PAM identities, required when PAM is enabled.
 dovecot_pam_username_filter: []
 
 # Existing auth-worker account; empty preserves Dovecot's privileged default.

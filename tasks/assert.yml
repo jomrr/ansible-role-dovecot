@@ -21,7 +21,6 @@
       - dovecot_users | map(attribute='name') | unique | length == dovecot_users | length
       - dovecot_sasl_users | map(attribute='name') | unique | length == dovecot_sasl_users | length
       - dovecot_users | map(attribute='name') | intersect(dovecot_sasl_users | map(attribute='name')) | length == 0
-      - dovecot_pam_service is match('^[a-z0-9_-]+$')
       - dovecot_auth_worker_user is match('^([a-z_][a-z0-9_-]*[$]?)?$')
     quiet: true
     fail_msg: Check delivery addresses, unique accounts, storage IDs, absolute paths and Sieve dependencies.
@@ -124,10 +123,27 @@
       {{ ((dovecot_users | rejectattr('password_hash', 'equalto', '*') | list) + dovecot_sasl_users)
          | rejectattr('password_hash', 'match', __dovecot_hash_pattern) | map(attribute='name') | list }}
 
+- name: assert | Require an explicit PAM identity policy
+  ansible.builtin.assert:
+    that:
+      - dovecot_pam_service is regex('dovecot(?:[-_][a-z0-9][a-z0-9_-]*)?', match_type='fullmatch')
+      - dovecot_pam_username_filter | length > 0
+      - dovecot_pam_username_format != 'localpart' or dovecot_pam_group | length > 0
+      - dovecot_pam_group == '' or dovecot_pam_group is match(__dovecot_pam_group_pattern)
+      - dovecot_pam_group not in ['audit', 'debug', 'quiet', 'quiet_fail', 'quiet_success', 'use_uid']
+    quiet: true
+    fail_msg: >-
+      Use a dedicated dovecot, dovecot-* or dovecot_* PAM service and set dovecot_pam_username_filter.
+      Local-part mapping also requires dovecot_pam_group.
+      Use a single NSS group name, optionally domain-qualified, without PAM options or group-list separators.
+  vars:
+    __dovecot_pam_group_pattern: '^(?:[\w.-]+\\)?\w[\w.()@+-]*(?: [\w.()@+-]+)*\Z'
+  when: dovecot_pam_enabled
+
 - name: assert | Validate PAM identity patterns
   ansible.builtin.assert:
     that:
-      - __dovecot_pattern is match('^!?[a-z0-9*?._+@-]+$')
+      - __dovecot_pattern is regex('!?[a-z0-9*?._+@-]+', match_type='fullmatch')
     quiet: true
   loop: "{{ dovecot_pam_username_filter }}"
   loop_control:

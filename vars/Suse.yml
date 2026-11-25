@@ -7,6 +7,8 @@ __dovecot_packages:
 __dovecot_imap_packages: []
 __dovecot_sieve_packages: []
 __dovecot_validate_config: /usr/bin/doveconf -c %s -n
+__dovecot_pam_auth_include: common-auth
+__dovecot_pam_account_include: common-account
 __dovecot_nologin: /usr/sbin/nologin
 __dovecot_gssapi_packages: []
 __dovecot_ldap_packages: []

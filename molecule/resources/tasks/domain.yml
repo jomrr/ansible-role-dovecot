@@ -87,6 +87,12 @@
     name: MailUsers
     members: [disabled]
 
+- name: Grant PAM login independently of mailbox eligibility
+  jomrr.samba.samba_group:
+    name: Mail Submitters
+    gid_number: 70110
+    members: [ad, adsql, disabled, local, sender]
+
 - name: DOVECOT | Create dedicated service identities for the test mail servers
   jomrr.samba.samba_user:
     username: "svc-{{ __dovecot_server }}"

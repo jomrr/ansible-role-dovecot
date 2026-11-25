@@ -13,7 +13,7 @@ Sieve filtering.
 
 Provide final mail delivery from Postfix through a private LMTP socket. Virtual
 accounts use Maildir, mbox, sdbox or mdbox storage, with optional IMAPS and
-ManageSieve access. File and SQL passwords, external PAM services and Kerberos
+ManageSieve access. File and SQL passwords, host PAM authentication and Kerberos
 SSO can coexist with file, SQL and LDAP mailbox lookup.
 
 ## Scope
@@ -25,16 +25,16 @@ SSO can coexist with file, SQL and LDAP mailbox lookup.
 - Dovecot main configuration, LMTP and Postfix SASL sockets, TLS-only client
   access and optional Sieve filtering.
 - Standard Drafts, Sent, Junk and Trash mailboxes with special-use flags.
-- Dovecot PAM and GSSAPI settings and local or TLS-verified SQL and LDAPS lookup
-  connections.
+- Dovecot's PAM service file, GSSAPI settings and local or TLS-verified SQL and
+  LDAPS lookup connections.
 
 ### Not Managed
 
 - Postfix routing, domains, aliases, recipient validation, DNS, firewall rules
   or certificate issuance.
 - SPNs, keytab creation, distribution and rotation, domain membership, Winbind,
-  PAM stacks, Kerberos client configuration, SQL/LDAP servers and schemas,
-  PostfixAdmin, mailbox migration and backups.
+  shared host PAM stacks, Kerberos client configuration, SQL/LDAP servers and
+  schemas, PostfixAdmin, mailbox migration and backups.
 
 ## Requirements
 
@@ -53,9 +53,10 @@ SSO can coexist with file, SQL and LDAP mailbox lookup.
   exist. With default paths, install Postfix before this role.
 - IMAPS and ManageSieve require an existing matching PEM certificate chain and
   an unencrypted private key readable by root. Protect the key with mode 0600.
-- PAM uses a service provided by the caller. jomrr.samba_ad_member configures
-  membership, Winbind and system authentication through jomrr.pam; Dovecot does
-  not invoke these roles.
+- With PAM enabled, Dovecot's service file includes the host auth and account
+  stacks. Debian and openSUSE use common-auth and common-account. Fedora and
+  AlmaLinux use password-auth. The caller maintains these stacks, NSS and domain
+  membership, for example with jomrr.samba_ad_member and jomrr.pam.
 - GSSAPI requires a working Kerberos client configuration and a dedicated keytab
   containing imap/hostname, smtp/hostname and sieve/hostname principals for the
   enabled services. Provision it externally, readable by root:dovecot with mode
@@ -447,8 +448,8 @@ dovecot_sasl_users: []
 
 Type: `bool`. Required: `false`.
 
-Enable additional password verification and account checks through an externally
-managed PAM service.
+Enable the Dovecot PAM service for password and account checks through the host
+authentication stack.
 
 Default:
 
@@ -460,12 +461,26 @@ dovecot_pam_enabled: false
 
 Type: `str`. Required: `false`.
 
-Existing PAM service name; the role does not configure PAM or join an AD domain.
+Dedicated PAM service named dovecot, optionally followed by a hyphen or
+underscore and a suffix.
 
 Default:
 
 ```yaml
 dovecot_pam_service: dovecot
+```
+
+### `dovecot_pam_group`
+
+Type: `str`. Required: `false`.
+
+NSS group authorized for PAM login. Required in localpart mode and optional for
+full identities.
+
+Default:
+
+```yaml
+dovecot_pam_group: ''
 ```
 
 ### `dovecot_pam_username_format`
@@ -485,8 +500,8 @@ dovecot_pam_username_format: full
 
 Type: `list`. Required: `false`.
 
-Native Dovecot username patterns selecting PAM users; file password and
-submission-only accounts are excluded.
+Native Dovecot username patterns selecting PAM identities. At least one pattern
+is required when PAM is enabled.
 
 Default:
 
@@ -1059,6 +1074,8 @@ dovecot_config: ''
 
 ## Managed Files
 
+- `/etc/pam.d/<dovecot_pam_service>` Dedicated Dovecot service, root:root mode
+  0644, managed when PAM is enabled. Its replacement follows dovecot_backup.
 - `/etc/dovecot/dovecot.conf` Root-owned main configuration with mode 0600. It
   includes the enabled lookup files.
 - `/etc/dovecot/users` File-backed mailbox password and user database,
@@ -1169,8 +1186,9 @@ enables the Dovecot service.
   submission entitlement with check_sasl_access before permitting authenticated
   relay, and envelope ownership with smtpd_sender_login_maps plus
   reject_authenticated_sender_login_mismatch. A valid AD ticket must not grant
-  realm-wide relay. These checks govern SMTP submission; a positive AUTH reply
-  alone does not grant permission to send.
+  realm-wide relay. A disabled SQL mailbox or removal from an LDAP mailbox group
+  can still leave an independent PAM or Kerberos identity eligible for SMTP
+  AUTH. Revoke submission access in its authoritative policy as well.
 - Keep canonical identities unique across credential sources. File accounts with
   real hashes and submission-only names are excluded from PAM. SQL password
   matches that fail verification cannot fall through to PAM: a native deny
@@ -1191,11 +1209,18 @@ enables the Dovecot service.
   unprivileged account when the deployed PAM stack, Winbind socket permissions
   and NSS lookups allow it. Verify the complete stack; do not grant privileged
   pipe access merely to make a test pass.
-- PAM full identity mode is the default for UPNs. Local-part mode deliberately
-  removes the domain only for the PAM call and restores the original mail login
-  afterwards. Local-part mode requires a qualified user@domain login. Restrict
-  dovecot_pam_username_filter to the intended domain in this mode; otherwise
-  distinct mail domains can resolve to the same system account.
+- PAM requires at least one dovecot_pam_username_filter pattern. In full mode
+  the host receives the complete login. A domain wildcard admits every matching
+  account accepted by the host stack unless dovecot_pam_group restricts it. An
+  exclusion-only filter admits every name except the exclusions.
+- Localpart mode requires a qualified login and dovecot_pam_group. The group
+  check uses the local part and Dovecot restores the original mail identity.
+  Limit the filter to the intended domain. Matching the same local part in
+  multiple domains authorizes the same system credential for each address.
+- A configured PAM group is checked before password verification for every PAM
+  login, including SMTP AUTH. Use one NSS-resolvable group. Both primary and
+  supplementary membership count. Keep root and service accounts outside the
+  group. File, SQL and Kerberos have independent policies.
 - Internal SQL or LDAP lookup failures stop that lookup chain. Earlier
   successful file-backed lookups remain independent of an external outage.
   Kerberos tickets can remain valid while a DC is offline; Winbind offline logon
@@ -1285,12 +1310,12 @@ enables the Dovecot service.
   and the role rejects requests for outbound extensions or redirects.
 - The role owns the complete main configuration. Review site-specific settings
   before adopting it. By default, dovecot_backup saves previous versions of the
-  main configuration, administrator Sieve sources, provisioning program and
-  units, and the managed CE repository key. Account files and SQL or LDAP
-  credentials are excluded. If custom dovecot_config contains secrets, disable
-  dovecot_backup before replacing that file and manage access to any earlier
-  backups. After renewing certificates, validate the configuration and reload
-  Dovecot.
+  main configuration, Dovecot PAM service, administrator Sieve sources,
+  provisioning program and units, and the managed CE repository key. Account
+  files and SQL or LDAP credentials are excluded. If custom dovecot_config
+  contains secrets, disable dovecot_backup before replacing that file and manage
+  access to any earlier backups. After renewing certificates, validate the
+  configuration and reload Dovecot.
 - Enable dovecot_quota_enabled to count stored mail. Limits, grace and per-user
   quota_storage_size are in bytes, with zero storage limit meaning unlimited.
   IMAP publishes usage and the effective limit. SQL user queries can return
@@ -1315,10 +1340,10 @@ enables the Dovecot service.
   inheriting relay rights. Mail processes can reach its private socket through
   the dovecot-quota group. Warning calls are advisory and may be triggered by
   local mailbox processes.
-- The auth cache defaults to zero. With caching enabled, password changes, AD
-  revocations and new mailboxes can remain stale. Dovecot may reuse expired
-  entries on backend failure. Use doveadm auth cache flush for immediate
-  invalidation when enabling the cache.
+- The Dovecot auth cache defaults to zero. The PAM passdb always checks the host
+  stack on fresh logins. NSS and Winbind can cache group membership. Other
+  cached lookups can remain stale or reuse expired entries on backend failure.
+  Use doveadm auth cache flush to invalidate Dovecot entries.
 - Extra plugins must be installed and compatible with all enabled mail
   processes. dovecot_services accepts native per-service settings.
   dovecot_config is trusted administrator configuration appended last. It can
@@ -1329,11 +1354,12 @@ enables the Dovecot service.
   fields. Names must be unique and disjoint from dovecot_users and remote
   mailbox identities. Its passdb is scoped to SMTP, and no userdb record is
   created.
-- dovecot_pam_enabled, dovecot_pam_service, dovecot_pam_username_format,
-  dovecot_pam_username_filter and dovecot_auth_worker_user control the Dovecot
-  side of PAM. A file-backed PAM mailbox needs a dovecot_users entry with
-  password_hash: "*". A SQL- or LDAP-backed mailbox needs only its authoritative
-  external record.
+- Use `dovecot`, `dovecot-*` or `dovecot_*` for dovecot_pam_service. Enabling
+  PAM replaces the service file. Review site-specific rules before adoption and
+  preserve any service-specific conditions in the host policy. Set
+  dovecot_pam_group to authorize a local or directory group. A file-backed PAM
+  mailbox needs a dovecot_users entry with password_hash: "*". SQL- or
+  LDAP-backed mailboxes use their authoritative record.
 - dovecot_gssapi_enabled, dovecot_gssapi_hostname and dovecot_krb5_keytab
   consume existing Kerberos service credentials. UPN, ticket principal and
   mailbox address must be mapped deliberately. The default preserves the full
@@ -1353,8 +1379,11 @@ enables the Dovecot service.
   bind_password, base, ca_file, user_filter, user_fields, iterate_filter and
   iterate_user. LDAP is a mailbox source; passwords remain in PAM/Winbind or
   another configured passdb. Filters and fields use native Dovecot LDAP
-  expansion. The SQL and LDAP dictionaries replace their defaults as complete
-  mappings.
+  expansion. The LDAP userdb verifies LDAPS with its own ca_file. Outbound SMTP,
+  including Sieve replies using submission_ssl, uses its configured trust or the
+  system store. Older OpenLDAP builds also use LDAPTLS_CACERT within Dovecot
+  processes for LDAP connections. The SQL and LDAP dictionaries replace their
+  defaults as complete mappings.
 - Lookup order is file, SQL, then LDAP for userdb, and file, SQL, then PAM for
   password authentication. SMTP-specific submission-only accounts run before the
   global passdbs. Identity collisions across remote sources remain an
@@ -1438,16 +1467,16 @@ applying firewall and certificate policy.
 
 ### Mixed local, AD and submission-only identities
 
-The caller supplies domain membership, PAM, service keytabs, TLS and Postfix
-submission policy. Local file users and AD-authenticated file mailboxes
-coexist. For directory-managed AD mailboxes, configure LDAP as in the
-following example instead of adding those identities to dovecot_users.
+The caller supplies domain membership, the host PAM stack, service keytabs,
+TLS and Postfix submission policy. Local file users and AD mailboxes coexist.
+Directory-managed mailboxes use the LDAP configuration in the next example.
 
 ```yaml
 dovecot_pam_enabled: true
 dovecot_pam_service: dovecot
 dovecot_pam_username_format: full
 dovecot_pam_username_filter: ['*@example.com']
+dovecot_pam_group: 'Mail Submitters'
 dovecot_auth_worker_user: doveauth
 dovecot_gssapi_enabled: true
 dovecot_gssapi_hostname: mail.example.com

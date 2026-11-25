@@ -91,7 +91,7 @@
   changed_when: __dovecot_submission_listener.rc == 0
   failed_when: __dovecot_submission_listener.rc != 0
 
-- name: DOVECOT | Add the loopback Sieve reinjection listener
+- name: Enable STARTTLS on the loopback Sieve reinjection listener
   become: true
   become_user: root
   ansible.builtin.command:
@@ -100,7 +100,7 @@
       - -M
       - >-
         127.0.0.1:10025/inet=127.0.0.1:10025 inet n - n - - smtpd
-        -o smtpd_tls_security_level=none -o smtpd_sasl_auth_enable=no
+        -o smtpd_tls_security_level=may -o smtpd_sasl_auth_enable=no
         -o smtpd_relay_restrictions=reject_unauth_destination
   register: __dovecot_reinjection_listener
   changed_when: __dovecot_reinjection_listener.rc == 0

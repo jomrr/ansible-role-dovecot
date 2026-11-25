@@ -2,17 +2,18 @@
 # file: {{ template_destpath }}
 dovecot_config_version = 2.4.0
 dovecot_storage_version = 2.4.0
-ldap_uris = {{ dovecot_ldap.uris | join(' ') | to_json(ensure_ascii=False) }}
-ldap_auth_dn = {{ dovecot_ldap.bind_dn | to_json(ensure_ascii=False) }}
-ldap_auth_dn_password = {{ dovecot_ldap.bind_password | to_json(ensure_ascii=False) }}
-ldap_base = {{ dovecot_ldap.base | to_json(ensure_ascii=False) }}
-ssl_client_ca_file = {{ dovecot_ldap.ca_file | to_json(ensure_ascii=False) }}
-ssl_client_require_valid_cert = yes
 # Older 2.4 OpenLDAP integrations initialize TLS before per-connection CA options.
 import_environment {
   LDAPTLS_CACERT = {{ dovecot_ldap.ca_file | to_json(ensure_ascii=False) }}
+  LDAPTLS_REQCERT = demand
 }
 userdb ldap {
+  ldap_uris = {{ dovecot_ldap.uris | join(' ') | to_json(ensure_ascii=False) }}
+  ldap_auth_dn = {{ dovecot_ldap.bind_dn | to_json(ensure_ascii=False) }}
+  ldap_auth_dn_password = {{ dovecot_ldap.bind_password | to_json(ensure_ascii=False) }}
+  ldap_base = {{ dovecot_ldap.base | to_json(ensure_ascii=False) }}
+  ssl_client_ca_file = {{ dovecot_ldap.ca_file | to_json(ensure_ascii=False) }}
+  ssl_client_require_valid_cert = yes
   filter = {{ dovecot_ldap.user_filter | to_json(ensure_ascii=False) }}
   fields {
 {% for __dovecot_field, __dovecot_value in dovecot_ldap.user_fields.items() %}

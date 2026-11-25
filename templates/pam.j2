@@ -1,0 +1,7 @@
+{{ ansible_managed | comment(prefix_count=0, postfix_count=0) }}
+# file: {{ template_destpath }}
+{% if dovecot_pam_group %}
+auth requisite pam_succeed_if.so user ingroup {{ '[' ~ dovecot_pam_group ~ ']' if ' ' in dovecot_pam_group else dovecot_pam_group }} quiet
+{% endif %}
+auth include {{ __dovecot_pam_auth_include }}
+account include {{ __dovecot_pam_account_include }}

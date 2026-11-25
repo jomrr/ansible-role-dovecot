@@ -191,13 +191,18 @@ argument_specs:
       dovecot_pam_enabled:
         type: bool
         default: false
-        description: Enable additional password verification and account checks through
-          an externally managed PAM service.
+        description: Enable the Dovecot PAM service for password and account checks through
+          the host authentication stack.
       dovecot_pam_service:
         type: str
         default: dovecot
-        description: Existing PAM service name; the role does not configure PAM or join
-          an AD domain.
+        description: Dedicated PAM service named dovecot, optionally followed by a hyphen
+          or underscore and a suffix.
+      dovecot_pam_group:
+        type: str
+        default: ''
+        description: NSS group authorized for PAM login. Required in localpart mode and
+          optional for full identities.
       dovecot_pam_username_format:
         type: str
         choices:
@@ -210,8 +215,8 @@ argument_specs:
         type: list
         elements: str
         default: []
-        description: Native Dovecot username patterns selecting PAM users; file password
-          and submission-only accounts are excluded.
+        description: Native Dovecot username patterns selecting PAM identities. At least
+          one pattern is required when PAM is enabled.
       dovecot_auth_worker_user:
         type: str
         default: ''
@@ -327,7 +332,8 @@ argument_specs:
           ca_file:
             type: str
             required: true
-            description: Existing trusted CA file used to verify LDAP server certificates.
+            description: CA file for the LDAP mailbox lookup. Other outgoing TLS clients
+              retain their own trust settings.
           user_filter:
             type: str
             required: true
