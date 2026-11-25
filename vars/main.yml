@@ -16,10 +16,45 @@ __dovecot_backends:
 # Keep password hashes out of ownership assertions and filesystem module results.
 __dovecot_mailbox_metadata: "{{ dovecot_users | map('combine', {'password_hash': ''}) | list }}"
 
+__dovecot_sieve_source_dir: /usr/local/share/dovecot/sieve
+__dovecot_sieve_cache_dir: /var/cache/dovecot/sieve
+__dovecot_learning_helper: /usr/local/lib/dovecot/rspamc-learn
+__dovecot_learning_password_file: /etc/dovecot/rspamd-controller.password
+
 __dovecot_sieve_scripts:
   before: "{{ dovecot_sieve_before }}"
   after: "{{ dovecot_sieve_after }}"
   default: "{{ dovecot_sieve_default }}"
+
+__dovecot_learning_scripts:
+  learn-spam: |
+    require ["copy", "environment", "vnd.dovecot.imapsieve", "vnd.dovecot.pipe"];
+    if not environment :is :comparator "i;octet" "vnd.dovecot.mailbox-from" "Junk" {
+      pipe :copy "learn-spam";
+    }
+  learn-ham: |
+    require ["copy", "environment", "imapsieve", "vnd.dovecot.pipe"];
+    if not environment :is :comparator "i;octet" "imap.mailbox" ["Junk", "Trash"] {
+      pipe :copy "learn-ham";
+    }
+
+# sievec runs outside the IMAP protocol filter. Enable these extensions only while compiling its two fixed scripts.
+__dovecot_learning_compiler_options:
+  - -P
+  - sieve_imapsieve
+  - -P
+  - sieve_extprograms
+  - -x
+  - copy environment imapsieve vnd.dovecot.imapsieve vnd.dovecot.pipe
+
+__dovecot_script_group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
+
+__dovecot_active_sieve_scripts: >-
+  {{ __dovecot_sieve_scripts | combine(__dovecot_learning_scripts if dovecot_spam_learning_enabled else {})
+     | dict2items | selectattr('value') | list }}
+__dovecot_inactive_sieve_names: >-
+  {{ (__dovecot_sieve_scripts | combine(__dovecot_learning_scripts)).keys()
+     | difference(__dovecot_active_sieve_scripts | map(attribute='key')) | sort }}
 
 __dovecot_sieve_has_transport: "{{ dovecot_submission_host | length > 0 or dovecot_sieve_sendmail_enabled }}"
 __dovecot_sieve_local_extensions:
@@ -46,7 +81,7 @@ __dovecot_sieve_local_extensions:
   - variables
 
 __dovecot_access_groups: >-
-  {{ (['dovecot-sieve'] if (dovecot_mail_ownership == 'per_user' and __dovecot_sieve_scripts.values() | select | list) else [])
+  {{ (['dovecot-sieve'] if dovecot_mail_ownership == 'per_user' and __dovecot_active_sieve_scripts else [])
      + (['dovecot-quota'] if dovecot_quota_enabled and dovecot_quota_warning_thresholds else []) }}
 
 __dovecot_provision: >-

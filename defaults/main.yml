@@ -258,6 +258,19 @@ dovecot_submission_host: ''
 dovecot_sieve_sendmail_enabled: false
 
 # ------------------------------------------------------------------------------
+# IMAP spam learning
+# ------------------------------------------------------------------------------
+
+# Train Rspamd when an IMAP client moves or copies mail across the Junk mailbox boundary.
+dovecot_spam_learning_enabled: false
+
+# Controller endpoint passed to rspamc.
+dovecot_spam_learning_host: '127.0.0.1:11334'
+
+# Optional Rspamd controller password for privileged learning commands.
+dovecot_spam_learning_password: ''
+
+# ------------------------------------------------------------------------------
 # ManageSieve
 # ------------------------------------------------------------------------------
 

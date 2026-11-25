@@ -1,0 +1,14 @@
+#!/bin/sh
+{{ ansible_managed | comment(prefix_count=0, postfix_count=0) }}
+# file: {{ template_destpath }}
+# Dovecot supplies the operation. Reject any additional arguments from the socket.
+case "$#:$1" in
+    1:learn_spam|1:learn_ham) ;;
+    *) exit 64 ;;
+esac
+exec /usr/bin/rspamc \
+    {{ ('--connect=' ~ dovecot_spam_learning_host) | quote }} \
+{% if dovecot_spam_learning_password %}
+    --password={{ __dovecot_learning_password_file }} \
+{% endif %}
+    "$1" >/dev/null

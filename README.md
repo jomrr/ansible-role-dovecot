@@ -25,6 +25,7 @@ SSO can coexist with file, SQL and LDAP mailbox lookup.
 - Dovecot main configuration, LMTP and Postfix SASL sockets, TLS-only client
   access and optional Sieve filtering.
 - Standard Drafts, Sent, Junk and Trash mailboxes with special-use flags.
+- Optional Rspamd spam and ham learning from IMAP moves and copies.
 - Dovecot's PAM service file, GSSAPI settings and local or TLS-verified SQL and
   LDAPS lookup connections.
 
@@ -51,6 +52,8 @@ SSO can coexist with file, SQL and LDAP mailbox lookup.
   online.
 - The configured MTA socket owner, group and socket parent directories must
   exist. With default paths, install Postfix before this role.
+- For spam learning, install /usr/bin/rspamc on the IMAP host and configure an
+  Rspamd controller that accepts privileged learning requests.
 - IMAPS and ManageSieve require an existing matching PEM certificate chain and
   an unencrypted private key readable by root. Protect the key with mode 0600.
 - With PAM enabled, Dovecot's service file includes the host auth and account
@@ -866,6 +869,42 @@ Default:
 dovecot_sieve_quota_storage_size: 5242880
 ```
 
+### `dovecot_spam_learning_enabled`
+
+Type: `bool`. Required: `false`.
+
+Train Rspamd on IMAP moves and copies into or out of Junk.
+
+Default:
+
+```yaml
+dovecot_spam_learning_enabled: false
+```
+
+### `dovecot_spam_learning_host`
+
+Type: `str`. Required: `false`.
+
+Controller endpoint passed to rspamc.
+
+Default:
+
+```yaml
+dovecot_spam_learning_host: 127.0.0.1:11334
+```
+
+### `dovecot_spam_learning_password`
+
+Type: `str`. Required: `false`.
+
+Optional Rspamd controller password for privileged learning commands.
+
+Default:
+
+```yaml
+dovecot_spam_learning_password: ''
+```
+
 ### `dovecot_lda_mailbox_autocreate`
 
 Type: `bool`. Required: `false`.
@@ -1080,8 +1119,17 @@ dovecot_config: ''
   includes the enabled lookup files.
 - `/etc/dovecot/users` File-backed mailbox password and user database,
   root:dovecot mode 0640; never backed up by this role.
-- `/etc/dovecot/sieve-{before,after,default}.sieve` Administrator scripts and
-  their compiled binaries, cleaned up individually when disabled.
+- `/usr/local/share/dovecot/sieve/` Administrator delivery rules before.sieve,
+  after.sieve and default.sieve, plus the optional IMAP rules learn-spam.sieve
+  and learn-ham.sieve.
+- `/var/cache/dovecot/sieve/` Rebuildable binaries in a separate cache directory
+  for each active administrator script. Disabling a rule removes its source and
+  cache.
+- `/usr/local/lib/dovecot/rspamc-learn` Private executable for the two IMAPSieve
+  learning sockets.
+- `/etc/dovecot/rspamd-controller.password` Optional controller credential,
+  root:dovecot-learn mode 0440. Disabling learning or clearing the password
+  removes this file.
 - `/usr/local/sbin/dovecot-provision-homes` Root-owned reconciler for per-user
   external homes. Timer mode also installs dovecot-provision-homes.service and
   .timer.
@@ -1123,10 +1171,12 @@ enables the Dovecot service.
   driver. Schedule this change when clients can reconnect. Changing credentials
   or queries for an active driver requires only a reload. On first adoption, a
   selected driver without a confirmed activation is treated as newly enabled.
-- After successful activation the role records the configuration revision and
-  selected lookup drivers in /etc/dovecot/.ansible-activation. Following an
-  interrupted run, correct the error and rerun the role to apply the pending
-  configuration.
+- After successful activation the role records the configuration revision,
+  lookup drivers and IMAPSieve state in /etc/dovecot/.ansible-activation.
+  Following an interrupted run, correct the error and rerun the role to apply
+  the pending configuration.
+- Enabling or disabling IMAP spam learning restarts Dovecot. Connected clients
+  must reconnect.
 
 ## Security Notes
 
@@ -1228,6 +1278,23 @@ enables the Dovecot service.
 
 ## Operational Notes
 
+- With dovecot_imap_enabled and dovecot_spam_learning_enabled, moving or copying
+  a message into Junk trains spam. Moving or copying it from Junk to another
+  mailbox trains ham, except when the destination is Trash or Junk. Delivery,
+  IMAP APPEND and flag changes do not train the classifier. IMAPSieve reports
+  MOVE and COPY with the same event. The IMAP operation waits for the
+  controller.
+- The two administrator IMAPSieve rules use private sockets for the fixed
+  learn_spam and learn_ham commands. Personal scripts retain their extension
+  allowlist. Learning works independently of delivery Sieve and ManageSieve.
+- dovecot_spam_learning_host defaults to 127.0.0.1:11334. The TCP connection
+  carries the message and password in cleartext. Use loopback or a protected
+  tunnel to a remote controller. To require authentication, exclude the IMAP
+  host from Rspamd's secure_ip and supply the controller's privileged password
+  through dovecot_spam_learning_password, for example from Ansible Vault. rspamc
+  trims trailing whitespace when reading a password file. Only root and the
+  dedicated dovecot-learn service account can read the file. Rotation replaces
+  it without a backup.
 - With dovecot_mail_ownership set to per_user (default), each dovecot_users
   entry requires numeric uid and gid, name and password_hash. The optional
   mail_format overrides the default. Formats are maildir, mbox, sdbox and mdbox.
@@ -1588,6 +1655,8 @@ dovecot_submission_host: 127.0.0.1:10025
 - [Dovecot LMTP and Postfix](https://doc.dovecot.org/main/howto/lmtp/postfix.html)
 - [Dovecot 2.3 to 2.4 configuration changes](https://doc.dovecot.org/main/installation/upgrade/2.3-to-2.4.html)
 - [Pigeonhole Sieve](https://doc.dovecot.org/main/core/plugins/sieve.html)
+- [Dovecot IMAPSieve spam reporting](https://doc.dovecot.org/2.4.1/core/config/spam_reporting.html)
+- [Rspamd client options](https://github.com/rspamd/rspamd/blob/master/doc/rspamc.1.md)
 - [Dovecot TLS and secured connections](https://doc.dovecot.org/main/core/config/ssl.html)
 - [Dovecot GSSAPI](https://doc.dovecot.org/2.4.2/core/config/auth/mechanisms/gssapi.html)
 - [Dovecot PAM](https://doc.dovecot.org/2.4.2/core/config/auth/databases/pam.html)

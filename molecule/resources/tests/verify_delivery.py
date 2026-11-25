@@ -186,6 +186,13 @@ class ClientTests(unittest.TestCase):
                 self.assertNotIn(b"enotify", extensions.split(b'"')[3].split())
                 stream.write(b'AUTHENTICATE "PLAIN" "' + token + b'"\r\n')
                 self.assertRegex(sieve_response(stream), b"^OK")
+                script = b'require "vnd.dovecot.pipe";'
+                stream.write(
+                    f"CHECKSCRIPT {{{len(script)}+}}\r\n".encode() + script + b"\r\n"
+                )
+                rejection = sieve_response(stream)
+                self.assertRegex(rejection, b"^NO")
+                self.assertIn(b"vnd.dovecot.pipe", rejection)
                 script = (
                     b'require ["fileinto"];\n'
                     b'if header :is "X-Dovecot-Test" "personal" {fileinto "Sent";}\n'
@@ -421,8 +428,9 @@ class MdaTests(unittest.TestCase):
             self.assertRaises((FileNotFoundError, ConnectionRefusedError)),
         ):
             client.connect(AUTH_PATH)
-        self.assertFalse(Path("/etc/dovecot/sieve-before.sieve").exists())
-        self.assertFalse(Path("/etc/dovecot/sieve-before.svbin").exists())
+        self.assertFalse(Path("/usr/local/share/dovecot/sieve/before.sieve").exists())
+        self.assertFalse(Path("/var/cache/dovecot/sieve/before").exists())
+        self.assertFalse(Path("/etc/dovecot/rspamd-controller.password").exists())
         for filename in ("sql.conf.ext", "ldap.conf.ext"):
             self.assertFalse((Path("/etc/dovecot") / filename).exists())
         self.assertNotIn(

@@ -37,11 +37,26 @@
     operation: baseline
   when: dovecot_sql_enabled or dovecot_ldap_enabled
 
+- name: Install the Rspamd learning service credentials and command
+  ansible.builtin.import_tasks: spam_learning.yml
+  when: dovecot_spam_learning_enabled
+
 - name: Configure delivery and client protocols
   ansible.builtin.import_tasks: config.yml
 
 - name: Compile Sieve and activate the validated service
   ansible.builtin.import_tasks: activation.yml
+
+- name: Remove the unused Rspamd client helper and credentials
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __dovecot_file }}"
+    state: absent
+  loop: "{{ [__dovecot_learning_helper, __dovecot_learning_password_file] }}"
+  loop_control:
+    loop_var: __dovecot_file
+  when: not dovecot_spam_learning_enabled
 
 - name: Provision homes from active mailbox lookups
   ansible.builtin.import_tasks: provision.yml

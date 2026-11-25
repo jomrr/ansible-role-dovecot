@@ -3,6 +3,7 @@
 import imaplib
 import os
 import pwd
+import re
 import smtplib
 import socket
 import ssl
@@ -73,6 +74,18 @@ def sieve_response(stream: socket.SocketIO) -> bytes:
             raise ConnectionError("ManageSieve closed the connection")
         lines.append(line)
         if line.startswith((b"OK", b"NO", b"BYE")):
+            # A multiline status message is a counted literal followed by the final CRLF.
+            literal = re.search(rb" \{(\d+)\}\r\n$", line)
+            if literal:
+                remaining = int(literal.group(1)) + 2
+                while remaining:
+                    chunk = stream.read(remaining)
+                    if not chunk:
+                        raise ConnectionError(
+                            "ManageSieve closed during a response literal"
+                        )
+                    lines.append(chunk)
+                    remaining -= len(chunk)
             return b"".join(lines)
 
 

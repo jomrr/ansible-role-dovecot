@@ -137,6 +137,12 @@ provisioner:
     host_vars:
       mail-debian:
         dovecot_home_provisioning: "timer"
+        dovecot_spam_learning_enabled: true
+        dovecot_spam_learning_host: "127.0.0.1:11339"
+        dovecot_spam_learning_password: |-
+          {{ lookup('ansible.builtin.password',
+             lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') ~ '/rspamd-password',
+             chars=['ascii_letters', 'digits']) }}
       mail-leap:
         dovecot_mail_format: "mbox"
   log: true

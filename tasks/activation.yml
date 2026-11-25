@@ -10,15 +10,33 @@
     predict_config_change: "{{ ansible_check_mode and (__dovecot_config_file.changed or __dovecot_lookup_files.changed or __dovecot_removed_lookups.changed) }}"
   register: __dovecot_activation
 
-- name: activation | Reconcile each administrator Sieve script and its binary
+- name: activation | Create the administrator Sieve source and cache directories
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __dovecot_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+    setype: _default
+  loop: "{{ [__dovecot_sieve_source_dir, __dovecot_sieve_cache_dir] }}"
+  loop_control:
+    loop_var: __dovecot_directory
+  when: __dovecot_active_sieve_scripts | length > 0
+
+- name: activation | Install and compile each enabled administrator Sieve script
   ansible.builtin.include_tasks: sieve_script.yml
-  loop: "{{ __dovecot_sieve_scripts | dict2items }}"
+  loop: "{{ __dovecot_active_sieve_scripts }}"
   loop_control:
     loop_var: __dovecot_script
     label: "{{ __dovecot_script.key }}"
   vars:
-    __dovecot_script_path: "/etc/dovecot/sieve-{{ __dovecot_script.key }}"
-    __dovecot_script_group: "{{ 'dovecot-sieve' if dovecot_mail_ownership == 'per_user' else dovecot_mail_group }}"
+    __dovecot_script_source: "{{ __dovecot_sieve_source_dir }}/{{ __dovecot_script.key }}.sieve"
+    __dovecot_script_binary: "{{ __dovecot_sieve_cache_dir }}/{{ __dovecot_script.key }}/{{ __dovecot_script.key }}.svbin"
+    __dovecot_compiler: >-
+      {{ ['/usr/bin/sievec', '-c', '/etc/dovecot/dovecot.conf']
+         + (__dovecot_learning_compiler_options if __dovecot_script.key in __dovecot_learning_scripts else []) }}
 
 - name: activation | Apply and acknowledge the validated revision
   become: true
@@ -28,6 +46,7 @@
     expected_revision: "{{ __dovecot_activation.revision }}"
     service_manager: "{{ ansible_facts.service_mgr }}"
     lookup_drivers: "{{ ([dovecot_sql.driver] if dovecot_sql_enabled else []) + (['ldap'] if dovecot_ldap_enabled else []) }}"
+    spam_learning: "{{ dovecot_spam_learning_enabled }}"
   when: __dovecot_activation.pending and not ansible_check_mode
 
 - name: activation | Enable and start the delivery service
@@ -37,3 +56,23 @@
     name: dovecot
     enabled: true
     state: started
+
+- name: activation | Remove disabled administrator Sieve sources
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __dovecot_sieve_source_dir }}/{{ __dovecot_name }}.sieve"
+    state: absent
+  loop: "{{ __dovecot_inactive_sieve_names }}"
+  loop_control:
+    loop_var: __dovecot_name
+
+- name: activation | Remove disabled administrator Sieve caches
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __dovecot_sieve_cache_dir }}/{{ __dovecot_name }}"
+    state: absent
+  loop: "{{ __dovecot_inactive_sieve_names }}"
+  loop_control:
+    loop_var: __dovecot_name

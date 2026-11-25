@@ -24,6 +24,7 @@ class ActivationTests(unittest.TestCase):
             "service_manager": "systemd",
             "predict_config_change": False,
             "lookup_drivers": [],
+            "spam_learning": False,
         }
         self.module.run_command.return_value = (0, "", "")
 

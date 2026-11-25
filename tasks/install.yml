@@ -17,7 +17,7 @@
     name: >-
       {{ __dovecot_packages
          + (dovecot_imap_enabled | ternary(__dovecot_imap_packages, []))
-         + (dovecot_sieve_enabled | ternary(__dovecot_sieve_packages, []))
+         + (__dovecot_sieve_packages if dovecot_sieve_enabled or dovecot_spam_learning_enabled else [])
          + (dovecot_gssapi_enabled | ternary(__dovecot_gssapi_packages, []))
          + (dovecot_sql_enabled | ternary(__dovecot_sql_packages[dovecot_sql.driver], []))
          + (dovecot_ldap_enabled | ternary(__dovecot_ldap_packages, []))

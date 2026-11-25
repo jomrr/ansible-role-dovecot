@@ -1,0 +1,66 @@
+---
+# role: dovecot
+# file: tasks/spam_learning.yml
+
+- name: spam_learning | Create the private controller credential group
+  become: true
+  become_user: root
+  ansible.builtin.group:
+    name: dovecot-learn
+    system: true
+
+- name: spam_learning | Create the unprivileged Rspamd client account
+  become: true
+  become_user: root
+  ansible.builtin.user:
+    name: dovecot-learn
+    group: dovecot-learn
+    system: true
+    home: /nonexistent
+    create_home: false
+    password_lock: true
+    shell: "{{ __dovecot_nologin }}"
+
+- name: spam_learning | Create the local Dovecot helper directory
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __dovecot_learning_helper | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: spam_learning | Install the private controller password
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    content: "{{ dovecot_spam_learning_password }}"
+    dest: "{{ __dovecot_learning_password_file }}"
+    owner: root
+    group: dovecot-learn
+    mode: '0440'
+    backup: false
+  diff: false
+  no_log: true
+  when: dovecot_spam_learning_password | length > 0
+
+- name: spam_learning | Install the fixed Rspamd client command
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: rspamc.sh.j2
+    dest: "{{ __dovecot_learning_helper }}"
+    owner: root
+    group: dovecot-learn
+    mode: '0750'
+    backup: "{{ dovecot_backup }}"
+    validate: /bin/sh -n %s
+
+- name: spam_learning | Remove the unused controller password
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ __dovecot_learning_password_file }}"
+    state: absent
+  when: dovecot_spam_learning_password | length == 0

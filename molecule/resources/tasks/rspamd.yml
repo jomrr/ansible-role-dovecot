@@ -1,0 +1,45 @@
+---
+# role: dovecot
+# file: molecule/resources/tasks/rspamd.yml
+
+- name: Install the Rspamd client, controller and Bayes store
+  become: true
+  become_user: root
+  ansible.builtin.apt:
+    name: [rspamd, redis-server]
+    state: present
+    policy_rc_d: 101
+
+- name: Require password authentication on the test controller
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/rspamd/override.d/worker-controller.inc
+    content: |
+      bind_socket = "{{ dovecot_spam_learning_host }}";
+      secure_ip = "192.0.2.1";
+      enable_password = "{{ dovecot_spam_learning_password }}";
+    owner: root
+    group: _rspamd
+    mode: '0640'
+  diff: false
+  no_log: true
+
+- name: Connect the Bayes classifier to its local store
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    dest: /etc/rspamd/local.d/redis.conf
+    content: |
+      servers = "127.0.0.1:6379";
+    mode: '0644'
+
+- name: Start the learning store and controller
+  become: true
+  become_user: root
+  ansible.builtin.systemd_service:
+    name: "{{ __dovecot_service }}"
+    state: started
+  loop: [redis-server, rspamd]
+  loop_control:
+    loop_var: __dovecot_service

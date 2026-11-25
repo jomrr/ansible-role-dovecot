@@ -18,6 +18,16 @@
     label: "{{ __dovecot_listener.port }}/tcp"
   when: __dovecot_listener.custom
 
+# Both IMAP and delivery read the administrator-compiled scripts. Only the role writes them.
+- name: selinux | Permit Dovecot to read the administrator Sieve cache
+  become: true
+  become_user: root
+  community.general.sefcontext:
+    target: "{{ __dovecot_sieve_cache_dir | regex_escape }}(/.*)?"
+    setype: dovecot_etc_t
+    state: present
+  when: __dovecot_active_sieve_scripts | length > 0
+
 - name: selinux | Persist the mailbox file context
   become: true
   become_user: root

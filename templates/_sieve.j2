@@ -15,7 +15,8 @@ sieve_script personal {
 sieve_script {{ __dovecot_script_type }} {
   type = {{ __dovecot_script_type }}
   driver = file
-  path = /etc/dovecot/sieve-{{ __dovecot_script_type }}.sieve
+  path = {{ __dovecot_sieve_source_dir }}/{{ __dovecot_script_type }}.sieve
+  bin_path = {{ __dovecot_sieve_cache_dir }}/{{ __dovecot_script_type }}
 }
 {% endfor %}
 {% set __dovecot_reply_extensions = ['vacation', 'reject'] if __dovecot_sieve_has_transport else [] %}
@@ -24,4 +25,7 @@ sieve_max_redirects = {{ dovecot_sieve_max_redirects }}
 sieve_max_script_size = {{ dovecot_sieve_max_script_size }}B
 sieve_quota_script_count = {{ dovecot_sieve_quota_script_count }}
 sieve_quota_storage_size = {{ dovecot_sieve_quota_storage_size }}B
+{% endif %}
+{% if dovecot_spam_learning_enabled %}
+{% include '_spam_learning.j2' %}
 {% endif %}

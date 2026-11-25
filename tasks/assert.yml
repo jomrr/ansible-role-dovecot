@@ -46,6 +46,16 @@
     fail_msg: Prepare a root-owned private storage tree or select shared ownership for an existing vmail deployment.
   when: dovecot_mail_ownership == 'per_user'
 
+- name: assert | Require IMAP and reserve the Rspamd pipe for administrator scripts
+  ansible.builtin.assert:
+    that:
+      - dovecot_imap_enabled
+      - dovecot_spam_learning_host is match('^\S+\Z')
+      - "'vnd.dovecot.pipe' not in dovecot_sieve_extensions"
+    quiet: true
+    fail_msg: Spam learning requires IMAP, a controller endpoint and a personal Sieve allowlist without vnd.dovecot.pipe.
+  when: dovecot_spam_learning_enabled
+
 - name: assert | Require a mail transport for outgoing Sieve actions
   ansible.builtin.assert:
     that:

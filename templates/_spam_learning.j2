@@ -1,0 +1,44 @@
+protocol imap {
+  mail_plugins {
+    imap_sieve = yes
+  }
+  sieve_plugins {
+    sieve_imapsieve = yes
+    sieve_extprograms = yes
+  }
+  sieve_global_extensions {
+{% for __dovecot_extension in ['copy', 'environment'] if dovecot_sieve_extensions and __dovecot_extension not in dovecot_sieve_extensions %}
+    {{ __dovecot_extension }} = yes
+{% endfor %}
+    vnd.dovecot.pipe = yes
+  }
+  sieve_pipe_bin_dir =
+  sieve_pipe_socket_dir = spam-learning
+}
+
+mailbox Junk {
+  sieve_script learn-spam {
+    type = before
+    cause = copy
+    path = {{ __dovecot_sieve_source_dir }}/learn-spam.sieve
+    bin_path = {{ __dovecot_sieve_cache_dir }}/learn-spam
+  }
+}
+imapsieve_from Junk {
+  sieve_script learn-ham {
+    type = before
+    cause = copy
+    path = {{ __dovecot_sieve_source_dir }}/learn-ham.sieve
+    bin_path = {{ __dovecot_sieve_cache_dir }}/learn-ham
+  }
+}
+{% for __dovecot_name in __dovecot_learning_scripts %}
+service {{ __dovecot_name }} {
+  executable = script {{ __dovecot_learning_helper }} {{ __dovecot_name | replace('-', '_') }}
+  user = dovecot-learn
+  unix_listener spam-learning/{{ __dovecot_name }} {
+    mode = 0660
+    group = {{ __dovecot_script_group | to_json }}
+  }
+}
+{% endfor %}

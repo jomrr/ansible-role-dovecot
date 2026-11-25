@@ -63,6 +63,17 @@
         PYTHONPATH: /etc/dovecot-test
       changed_when: false
 
+    - name: Verify spam and ham learning on the Rspamd controller
+      become: true
+      become_user: root
+      ansible.builtin.script:
+        cmd: ../tests/verify_learning.py
+        executable: python3
+      environment:
+        PYTHONPATH: /etc/dovecot-test
+      changed_when: false
+      when: dovecot_spam_learning_enabled | default(false)
+
     - name: DOVECOT | Verify session continuity, mailbox quota and SMTP vacation replies
       become: true
       become_user: root
@@ -220,6 +231,7 @@
     dovecot_mail_ownership: shared
     dovecot_mail_root: /var/vmail-shared
     dovecot_imap_enabled: false
+    dovecot_spam_learning_enabled: false
     dovecot_managesieve_enabled: false
     dovecot_postfix_auth_enabled: false
     dovecot_sieve_enabled: false

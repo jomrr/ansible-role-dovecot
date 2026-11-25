@@ -472,6 +472,19 @@ argument_specs:
         type: int
         description: Maximum total personal Sieve storage in bytes.
         default: 5242880
+      dovecot_spam_learning_enabled:
+        type: bool
+        description: Train Rspamd on IMAP moves and copies into or out of Junk.
+        default: false
+      dovecot_spam_learning_host:
+        type: str
+        description: Controller endpoint passed to rspamc.
+        default: 127.0.0.1:11334
+      dovecot_spam_learning_password:
+        type: str
+        no_log: true
+        description: Optional Rspamd controller password for privileged learning commands.
+        default: ''
       dovecot_lda_mailbox_autocreate:
         type: bool
         description: Allow delivery to create missing destination mailboxes.

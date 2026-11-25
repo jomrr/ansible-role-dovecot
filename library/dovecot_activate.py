@@ -67,8 +67,8 @@ def acknowledge(directory: Path, receipt: str, directory_fd: int) -> None:
             path.unlink(missing_ok=True)
 
 
-def activate_service(module: AnsibleModule, new_driver: bool) -> None:
-    """A new lookup driver needs a fresh config process to load its settings."""
+def activate_service(module: AnsibleModule, restart_required: bool) -> None:
+    """Restart when a plugin transition needs fresh processes."""
     systemd = module.params["service_manager"] == "systemd"
     status_command = (
         ["systemctl", "is-active", "--quiet", "dovecot.service"]
@@ -77,7 +77,7 @@ def activate_service(module: AnsibleModule, new_driver: bool) -> None:
     )
     status, _, _ = module.run_command(status_command)
     if status == 0:
-        action = "restart" if new_driver else "reload"
+        action = "restart" if restart_required else "reload"
     elif status == 3 or (not systemd and status in (1, 2)):
         action = "start"
     else:
@@ -109,7 +109,7 @@ def read_record(directory: Path) -> list[str]:
 
 
 def format_record(revision: str, drivers: set[str]) -> str:
-    """Store only the configuration revision and selected lookup drivers."""
+    """Store the configuration revision and drivers that affect service activation."""
     return f"{revision}\ndrivers={' '.join(sorted(drivers))}\n"
 
 
@@ -152,6 +152,8 @@ def reconcile(module: AnsibleModule, directory: Path) -> tuple[bool, str]:
                 )
             if pending and not module.check_mode:
                 drivers = set(module.params["lookup_drivers"])
+                if module.params["spam_learning"]:
+                    drivers.add("imap_sieve")
                 active = next(
                     (
                         line.removeprefix("drivers=").split()
@@ -160,7 +162,10 @@ def reconcile(module: AnsibleModule, directory: Path) -> tuple[bool, str]:
                     ),
                     [],
                 )
-                activate_service(module, bool(drivers.difference(active)))
+                restart = bool(drivers.difference(active)) or (
+                    "imap_sieve" in active and "imap_sieve" not in drivers
+                )
+                activate_service(module, restart)
                 acknowledge(directory, format_record(revision, drivers), lock)
         return pending, revision
 
@@ -176,6 +181,7 @@ def main() -> None:
             },
             "expected_revision": {"type": "str"},
             "service_manager": {"type": "str"},
+            "spam_learning": {"type": "bool", "default": False},
             "lookup_drivers": {
                 "type": "list",
                 "elements": "str",
