@@ -47,6 +47,14 @@
         state: present
       when: inventory_hostname in groups['dovecot_servers']
 
+    - name: Install pamtester for independent account and system login checks
+      become: true
+      become_user: root
+      ansible.builtin.package:
+        name: pamtester
+        state: present
+      when: inventory_hostname in groups['dovecot_servers'] and ansible_facts.distribution == 'Debian'
+
     - name: Prepare the Rspamd controller on the learning host
       ansible.builtin.include_tasks: ../tasks/rspamd.yml
       when: dovecot_spam_learning_enabled | default(false)

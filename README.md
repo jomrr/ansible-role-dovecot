@@ -13,8 +13,8 @@ Sieve filtering.
 
 Provide final mail delivery from Postfix through a private LMTP socket. Virtual
 accounts use Maildir, mbox, sdbox or mdbox storage, with optional IMAPS and
-ManageSieve access. File and SQL passwords, host PAM authentication and Kerberos
-SSO can coexist with file, SQL and LDAP mailbox lookup.
+ManageSieve access. File and SQL passwords, PAM authentication and Kerberos SSO
+can coexist with file, SQL and LDAP mailbox lookup.
 
 ## Scope
 
@@ -56,10 +56,15 @@ SSO can coexist with file, SQL and LDAP mailbox lookup.
   Rspamd controller that accepts privileged learning requests.
 - IMAPS and ManageSieve require an existing matching PEM certificate chain and
   an unencrypted private key readable by root. Protect the key with mode 0600.
-- With PAM enabled, Dovecot's service file includes the host auth and account
-  stacks. Debian and openSUSE use common-auth and common-account. Fedora and
-  AlmaLinux use password-auth. The caller maintains these stacks, NSS and domain
-  membership, for example with jomrr.samba_ad_member and jomrr.pam.
+- With PAM enabled, the default `system` backend includes the host auth and
+  account stacks. Debian, Ubuntu and openSUSE use common-auth and
+  common-account. Fedora and AlmaLinux use password-auth. The caller maintains
+  these stacks, NSS and domain membership, for example with
+  jomrr.samba_ad_member and jomrr.pam.
+- The `winbind` PAM backend requires a joined member with working Winbind,
+  wbinfo and pam_winbind.so. Set dovecot_pam_group to a single AD group name
+  resolvable by Winbind and NSS, for example `EXAMPLE\Mail Submitters`. The role
+  resolves the group SID during convergence and check mode.
 - GSSAPI requires a working Kerberos client configuration and a dedicated keytab
   containing imap/hostname, smtp/hostname and sieve/hostname principals for the
   enabled services. Provision it externally, readable by root:dovecot with mode
@@ -451,13 +456,25 @@ dovecot_sasl_users: []
 
 Type: `bool`. Required: `false`.
 
-Enable the Dovecot PAM service for password and account checks through the host
-authentication stack.
+Enable password and account checks through the dedicated Dovecot PAM service.
 
 Default:
 
 ```yaml
 dovecot_pam_enabled: false
+```
+
+### `dovecot_pam_backend`
+
+Type: `str`. Required: `false`.
+
+Include the system PAM stack or use Winbind directly with the Dovecot mailbox
+group.
+
+Default:
+
+```yaml
+dovecot_pam_backend: system
 ```
 
 ### `dovecot_pam_service`
@@ -477,8 +494,8 @@ dovecot_pam_service: dovecot
 
 Type: `str`. Required: `false`.
 
-NSS group authorized for PAM login. Required in localpart mode and optional for
-full identities.
+NSS group authorized for PAM login. Direct Winbind requires an AD group name.
+Localpart mapping also requires a group.
 
 Default:
 
@@ -1260,17 +1277,23 @@ enables the Dovecot service.
   and NSS lookups allow it. Verify the complete stack; do not grant privileged
   pipe access merely to make a test pass.
 - PAM requires at least one dovecot_pam_username_filter pattern. In full mode
-  the host receives the complete login. A domain wildcard admits every matching
-  account accepted by the host stack unless dovecot_pam_group restricts it. An
-  exclusion-only filter admits every name except the exclusions.
+  PAM receives the complete login. A domain wildcard admits every matching
+  account accepted by the selected PAM service. An exclusion-only filter admits
+  every name except the exclusions.
 - Localpart mode requires a qualified login and dovecot_pam_group. The group
   check uses the local part and Dovecot restores the original mail identity.
   Limit the filter to the intended domain. Matching the same local part in
   multiple domains authorizes the same system credential for each address.
-- A configured PAM group is checked before password verification for every PAM
-  login, including SMTP AUTH. Use one NSS-resolvable group. Both primary and
-  supplementary membership count. Keep root and service accounts outside the
-  group. File, SQL and Kerberos have independent policies.
+- In `system` mode a configured dovecot_pam_group is checked through NSS before
+  password verification, including SMTP AUTH. Keep root and service accounts
+  outside the mail group. File, SQL and Kerberos have independent policies.
+- In `winbind` mode Dovecot passes the mailbox group SID as
+  require_membership_of to pam_winbind for password authentication. The account
+  stack checks membership in the same group through NSS and runs pam_winbind's
+  account checks. This policy covers IMAP, SMTP AUTH and enabled ManageSieve.
+  Other Winbind settings still come from pam_winbind.conf. Server logins use the
+  host's own PAM policy and login groups. Host-stack controls such as MFA or
+  pam_access apply to Dovecot in `system` mode.
 - Internal SQL or LDAP lookup failures stop that lookup chain. Earlier
   successful file-backed lookups remain independent of an external outage.
   Kerberos tickets can remain valid while a DC is offline; Winbind offline logon
@@ -1413,8 +1436,8 @@ enables the Dovecot service.
   inheriting relay rights. Mail processes can reach its private socket through
   the dovecot-quota group. Warning calls are advisory and may be triggered by
   local mailbox processes.
-- The Dovecot auth cache defaults to zero. The PAM passdb always checks the host
-  stack on fresh logins. NSS and Winbind can cache group membership. Other
+- The Dovecot auth cache defaults to zero. The PAM passdb checks the selected
+  service on fresh logins. NSS and Winbind can cache group membership. Other
   cached lookups can remain stale or reuse expired entries on backend failure.
   Use doveadm auth cache flush to invalidate Dovecot entries.
 - Extra plugins must be installed and compatible with all enabled mail
@@ -1429,8 +1452,7 @@ enables the Dovecot service.
   created.
 - Use `dovecot`, `dovecot-*` or `dovecot_*` for dovecot_pam_service. Enabling
   PAM replaces the service file. Review site-specific rules before adoption and
-  preserve any service-specific conditions in the host policy. Set
-  dovecot_pam_group to authorize a local or directory group. A file-backed PAM
+  select the backend that enforces the required policy. A file-backed PAM
   mailbox needs a dovecot_users entry with password_hash: "*". SQL- or
   LDAP-backed mailboxes use their authoritative record.
 - dovecot_gssapi_enabled, dovecot_gssapi_hostname and dovecot_krb5_keytab
@@ -1540,16 +1562,18 @@ applying firewall and certificate policy.
 
 ### Mixed local, AD and submission-only identities
 
-The caller supplies domain membership, the host PAM stack, service keytabs,
-TLS and Postfix submission policy. Local file users and AD mailboxes coexist.
+Dovecot verifies AD passwords against the mail group. The host enforces its
+server-login group separately. The caller supplies domain membership, service
+keytabs, TLS and Postfix submission policy. Local file users and AD mailboxes coexist.
 Directory-managed mailboxes use the LDAP configuration in the next example.
 
 ```yaml
 dovecot_pam_enabled: true
+dovecot_pam_backend: winbind
 dovecot_pam_service: dovecot
 dovecot_pam_username_format: full
 dovecot_pam_username_filter: ['*@example.com']
-dovecot_pam_group: 'Mail Submitters'
+dovecot_pam_group: 'EXAMPLE\Mail Submitters'
 dovecot_auth_worker_user: doveauth
 dovecot_gssapi_enabled: true
 dovecot_gssapi_hostname: mail.example.com
@@ -1666,6 +1690,7 @@ dovecot_submission_host: 127.0.0.1:10025
 - [Dovecot TLS and secured connections](https://doc.dovecot.org/main/core/config/ssl.html)
 - [Dovecot GSSAPI](https://doc.dovecot.org/2.4.2/core/config/auth/mechanisms/gssapi.html)
 - [Dovecot PAM](https://doc.dovecot.org/2.4.2/core/config/auth/databases/pam.html)
+- [Samba pam_winbind module options](https://www.samba.org/samba/docs/current/man-html/pam_winbind.8.html)
 - [Dovecot SQL](https://doc.dovecot.org/2.4.2/core/config/auth/databases/sql.html)
 - [Dovecot LDAP](https://doc.dovecot.org/2.4.2/core/config/auth/databases/ldap.html)
 - [Postfix SASL](https://www.postfix.org/SASL_README.html)

@@ -128,13 +128,13 @@
     that:
       - dovecot_pam_service is regex('dovecot(?:[-_][a-z0-9][a-z0-9_-]*)?', match_type='fullmatch')
       - dovecot_pam_username_filter | length > 0
-      - dovecot_pam_username_format != 'localpart' or dovecot_pam_group | length > 0
+      - dovecot_pam_group | length > 0 or (dovecot_pam_backend == 'system' and dovecot_pam_username_format == 'full')
       - dovecot_pam_group == '' or dovecot_pam_group is match(__dovecot_pam_group_pattern)
       - dovecot_pam_group not in ['audit', 'debug', 'quiet', 'quiet_fail', 'quiet_success', 'use_uid']
     quiet: true
     fail_msg: >-
       Use a dedicated dovecot, dovecot-* or dovecot_* PAM service and set dovecot_pam_username_filter.
-      Local-part mapping also requires dovecot_pam_group.
+      Direct Winbind and local-part mapping require dovecot_pam_group.
       Use a single NSS group name, optionally domain-qualified, without PAM options or group-list separators.
   vars:
     __dovecot_pam_group_pattern: '^(?:[\w.-]+\\)?\w[\w.()@+-]*(?: [\w.()@+-]+)*\Z'

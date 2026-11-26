@@ -151,8 +151,9 @@ class ClientTests(unittest.TestCase):
                 client.login(recipient, "incorrect-password")
 
     def test_managesieve(self) -> None:
-        """STARTTLS is mandatory and uploaded personal rules affect delivery."""
-        token = base64.b64encode(f"\0maildir@example.test\0{PASSWORD}".encode())
+        """A mail-only AD user can manage personal rules over STARTTLS."""
+        address = "ad@mail.test"
+        token = base64.b64encode(f"\0{address}\0{AD_PASSWORD}".encode())
         with (
             socket.create_connection(
                 ("127.0.0.1", 4190), timeout=15, source_address=("127.0.0.2", 0)
@@ -202,9 +203,9 @@ class ClientTests(unittest.TestCase):
                 self.assertRegex(sieve_response(stream), b"^OK")
                 stream.write(b'SETACTIVE "molecule"\r\n')
                 self.assertRegex(sieve_response(stream), b"^OK")
-        message_id = deliver("maildir@example.test", "personal")
-        self.assertTrue(search("maildir@example.test", "Sent", message_id))
-        self.assertFalse(search("maildir@example.test", "INBOX", message_id))
+        message_id = deliver(address, "personal")
+        self.assertTrue(search(address, "Sent", message_id))
+        self.assertFalse(search(address, "INBOX", message_id))
 
 
 class SqlTests(unittest.TestCase):
@@ -239,6 +240,15 @@ class SqlTests(unittest.TestCase):
 
 class IdentityTests(unittest.TestCase):
     """Real Winbind, Kerberos, LDAP and Postfix integration."""
+
+    def test_winbind_submission_group(self) -> None:
+        """SMTP AUTH accepts a mail-only AD user and refuses a server-only user."""
+        # Keep this client's authentication penalty independent of earlier rejections.
+        with submission_client(source_address=("127.0.0.3", 0)) as client:
+            with self.assertRaises(smtplib.SMTPAuthenticationError) as denied:
+                authenticate_submission(client, "outsider@mail.test", AD_PASSWORD)
+            self.assertEqual(denied.exception.smtp_code, 535)
+            authenticate_submission(client, "ad@mail.test", AD_PASSWORD)
 
     def test_directory_password_login(self) -> None:
         """Winbind validates the full UPN while LDAP supplies the mailbox."""

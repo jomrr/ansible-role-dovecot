@@ -93,6 +93,12 @@
     gid_number: 70110
     members: [ad, adsql, disabled, local, sender]
 
+- name: Authorize host logins independently of mail passwords
+  jomrr.samba.samba_group:
+    name: ServerLogins
+    gid_number: 70111
+    members: [outsider, adsql]
+
 - name: DOVECOT | Create dedicated service identities for the test mail servers
   jomrr.samba.samba_user:
     username: "svc-{{ __dovecot_server }}"

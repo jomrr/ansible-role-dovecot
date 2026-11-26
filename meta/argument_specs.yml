@@ -191,8 +191,16 @@ argument_specs:
       dovecot_pam_enabled:
         type: bool
         default: false
-        description: Enable the Dovecot PAM service for password and account checks through
-          the host authentication stack.
+        description: Enable password and account checks through the dedicated Dovecot PAM
+          service.
+      dovecot_pam_backend:
+        type: str
+        choices:
+          - system
+          - winbind
+        default: system
+        description: Include the system PAM stack or use Winbind directly with the Dovecot
+          mailbox group.
       dovecot_pam_service:
         type: str
         default: dovecot
@@ -201,8 +209,8 @@ argument_specs:
       dovecot_pam_group:
         type: str
         default: ''
-        description: NSS group authorized for PAM login. Required in localpart mode and
-          optional for full identities.
+        description: NSS group authorized for PAM login. Direct Winbind requires an AD group
+          name. Localpart mapping also requires a group.
       dovecot_pam_username_format:
         type: str
         choices:

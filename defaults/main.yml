@@ -81,10 +81,14 @@ dovecot_sasl_users: []
 # Enable password and account checks through the Dovecot PAM service.
 dovecot_pam_enabled: false
 
+# PAM backend for password and account checks.
+# Choices: system, winbind
+dovecot_pam_backend: system
+
 # Dedicated PAM service file managed when PAM is enabled.
 dovecot_pam_service: dovecot
 
-# NSS group authorized to authenticate through PAM, required with local-part mapping.
+# NSS mailbox group required for direct Winbind or local-part mapping.
 dovecot_pam_group: ''
 
 # Identity passed to PAM; the original full login is restored afterwards.

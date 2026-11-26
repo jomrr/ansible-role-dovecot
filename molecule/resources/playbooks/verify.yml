@@ -87,6 +87,23 @@
         PYTHONPATH: /etc/dovecot-test
       changed_when: false
 
+    - name: Verify the mail-only and server-only users against the native PAM services
+      ansible.builtin.command:
+        argv: "{{ ['pamtester', __dovecot_case.service, __dovecot_case.user] + __dovecot_case.operations }}"
+        stdin: "{{ __dovecot_ad_user_password }}"
+      loop:
+        - {service: login, user: ad@mail.test, operations: [authenticate, acct_mgmt], rc: 1}
+        - {service: login, user: outsider@mail.test, operations: [authenticate, acct_mgmt], rc: 0}
+        - {service: "{{ dovecot_pam_service }}", user: outsider@mail.test, operations: [acct_mgmt], rc: 1}
+      loop_control:
+        loop_var: __dovecot_case
+        label: "{{ __dovecot_case.service }} {{ __dovecot_case.user }}"
+      register: __dovecot_pam_check
+      failed_when: __dovecot_pam_check.rc != __dovecot_case.rc
+      changed_when: false
+      no_log: true
+      when: ansible_facts.distribution == 'Debian'
+
     - name: Verify spam and ham learning on the Rspamd controller
       become: true
       become_user: root
@@ -112,8 +129,9 @@
       vars: &dovecot_postgres_pam
         dovecot_sql: '{{ hostvars[inventory_hostname].dovecot_sql | combine({''driver'': ''pgsql'', ''port'': 5432}) }}'
         dovecot_quota_full_tempfail: true
+        dovecot_pam_backend: system
         dovecot_pam_username_format: localpart
-        dovecot_pam_service: dovecot
+        dovecot_pam_group: Mail Submitters
         dovecot_auth_worker_user: ''
 
     - name: DOVECOT | Verify the alternate SQL driver and PAM identity mapping

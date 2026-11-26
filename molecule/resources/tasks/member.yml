@@ -33,6 +33,7 @@
     samba_ad_member_pam_winbind_options:
       krb5_auth: true
       cached_login: false
+      require_membership_of: 'MAIL\ServerLogins'
     pam_authselect_force: true
     pam_mkhomedir: false
 

@@ -2,6 +2,16 @@
 # role: dovecot
 # file: tasks/accounts.yml
 
+# Winbind takes a SID for group names containing spaces. Types 2, 4 and 5 are groups or aliases.
+- name: accounts | Resolve the AD mailbox group SID for the Dovecot PAM service
+  ansible.builtin.command:
+    argv: [wbinfo, --name-to-sid, "{{ dovecot_pam_group }}"]
+  register: __dovecot_pam_group_lookup
+  changed_when: false
+  failed_when: __dovecot_pam_group_lookup.rc != 0 or __dovecot_pam_group_lookup.stdout is not search(' [(][245][)]$')
+  check_mode: false
+  when: dovecot_pam_enabled and dovecot_pam_backend == 'winbind'
+
 - name: accounts | Install the Dovecot PAM service
   become: true
   become_user: root

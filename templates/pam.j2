@@ -1,7 +1,14 @@
 {{ ansible_managed | comment(prefix_count=0, postfix_count=0) }}
 # file: {{ template_destpath }}
+{% set __dovecot_group_arg = '[' ~ dovecot_pam_group ~ ']' if ' ' in dovecot_pam_group else dovecot_pam_group %}
+{% if dovecot_pam_backend == 'winbind' %}
+auth required pam_winbind.so require_membership_of={{ __dovecot_pam_group_lookup.stdout.split()[0] }}
+account [success=ignore default=die] pam_succeed_if.so user ingroup {{ __dovecot_group_arg }} quiet
+account required pam_winbind.so
+{% else %}
 {% if dovecot_pam_group %}
-auth requisite pam_succeed_if.so user ingroup {{ '[' ~ dovecot_pam_group ~ ']' if ' ' in dovecot_pam_group else dovecot_pam_group }} quiet
+auth requisite pam_succeed_if.so user ingroup {{ __dovecot_group_arg }} quiet
 {% endif %}
 auth include {{ __dovecot_pam_auth_include }}
 account include {{ __dovecot_pam_account_include }}
+{% endif %}

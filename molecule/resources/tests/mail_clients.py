@@ -94,9 +94,9 @@ def imap_client() -> imaplib.IMAP4_SSL:
     return imaplib.IMAP4_SSL("localhost", ssl_context=tls_context(), timeout=60)
 
 
-def submission_client() -> smtplib.SMTP:
+def submission_client(source_address: tuple[str, int] | None = None) -> smtplib.SMTP:
     """Exercise the real Postfix listener over verified TLS."""
-    client = smtplib.SMTP("localhost", 587, timeout=60)
+    client = smtplib.SMTP("localhost", 587, timeout=60, source_address=source_address)
     client.starttls(context=tls_context())
     client.ehlo()
     return client

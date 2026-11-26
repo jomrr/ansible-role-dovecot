@@ -93,8 +93,9 @@ provisioner:
             stop;
           }
         dovecot_pam_enabled: true
-        dovecot_pam_service: "dovecot-test-winbind"
-        dovecot_pam_group: "Mail Submitters"
+        dovecot_pam_backend: "winbind"
+        dovecot_pam_service: "dovecot-test"
+        dovecot_pam_group: "MAIL\\Mail Submitters"
         dovecot_pam_username_filter:
           - "*@mail.test"
         dovecot_auth_worker_user: "doveauth"
