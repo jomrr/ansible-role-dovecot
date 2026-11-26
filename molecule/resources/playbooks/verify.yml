@@ -53,6 +53,30 @@
               - __dovecot_new_home.stat.mode == '0700'
             quiet: true
 
+    - name: Verify the role rejects a new mail root below a user-owned directory
+      when: inventory_hostname == ansible_play_hosts_all[0]
+      block:
+        - name: Check a nested mail root beneath a provisioned mailbox
+          ansible.builtin.include_role:
+            name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+            tasks_from: assert
+            apply:
+              check_mode: true
+          vars:
+            dovecot_mail_root: /var/vmail/maildir@example.test/missing/mail
+
+        - name: Fail if the role accepted the user-owned ancestor
+          ansible.builtin.fail:
+            msg: The role accepted a mail root under a mailbox user's control.
+
+      rescue:
+        - name: Require the absolute path of the rejected directory
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.rc | default(-1) == 1
+              - "'/var/vmail/maildir@example.test:' in (ansible_failed_result.stderr ~ ansible_failed_result.stdout)"
+            quiet: true
+
     - name: DOVECOT | Exercise storage formats, Sieve, authentication and TLS policy
       become: true
       become_user: root

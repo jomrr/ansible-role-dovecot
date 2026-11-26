@@ -19,6 +19,23 @@
   hosts: dovecot_servers
   gather_facts: false
   tasks:
+    - name: Prepare the invalid mailbox homes beneath the role-created mail root
+      become: true
+      become_user: root
+      ansible.builtin.file:
+        path: "/var/vmail/{{ __dovecot_home.name }}"
+        state: directory
+        owner: "{{ __dovecot_home.uid | string }}"
+        group: "{{ __dovecot_home.gid | string }}"
+        mode: "{{ __dovecot_home.mode }}"
+      loop:
+        - {name: baduid@mail.test, uid: 69999, gid: 70100, mode: '0700'}
+        - {name: badgid@mail.test, uid: 70204, gid: 69999, mode: '0700'}
+        - {name: drift@mail.test, uid: 70205, gid: 70100, mode: '0750'}
+      loop_control:
+        loop_var: __dovecot_home
+        label: "{{ __dovecot_home.name }}"
+
     - name: DOVECOT | Open an authenticated IMAP session across the next convergence
       become: true
       become_user: root

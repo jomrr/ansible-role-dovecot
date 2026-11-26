@@ -118,33 +118,49 @@ def records(args: argparse.Namespace, result: Result) -> Iterator[Mailbox]:
             yield box
 
 
-def trusted(fd: int) -> None:
+def trusted(fd: int, path: Path) -> None:
     """Check the parent before using it to address a child."""
     info = os.fstat(fd)
     if info.st_uid != 0 or info.st_mode & 0o022:
         raise ValueError(
-            "mailbox parents must be root-owned and private to administrators"
+            f"{path}: expected a root-owned directory without group or other write permission "
+            f"(UID {info.st_uid}, mode {stat.S_IMODE(info.st_mode):04o})"
         )
 
 
 @contextmanager
-def directory(start: int, path: Path, create: bool = False) -> Iterator[int]:
+def directory(
+    start: int, base: Path, relative: Path, create: bool = False
+) -> Iterator[int]:
     """Walk beneath an open descriptor without following symlinks."""
+    current = base
     fd = os.dup(start)
     try:
-        trusted(fd)
-        for part in path.parts:
+        trusted(fd, current)
+        for part in relative.parts:
+            current /= part
+            created = False
             try:
                 child = os.open(part, DIRECTORY, dir_fd=fd)
             except FileNotFoundError:
                 if not create:
                     raise
-                os.mkdir(part, 0o711, dir_fd=fd)
+                try:
+                    os.mkdir(part, 0o711, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                else:
+                    created = True
                 child = os.open(part, DIRECTORY, dir_fd=fd)
-                os.fchmod(child, 0o711)
             os.close(fd)
             fd = child
-            trusted(fd)
+            if created:
+                os.fchmod(fd, 0o711)
+            trusted(fd, current)
+    except OSError as error:
+        error.filename = os.fspath(current)
+        raise
+    else:
         yield fd
     finally:
         os.close(fd)
@@ -185,14 +201,21 @@ def provision(parent: int, box: Mailbox, check: bool) -> bool:
 
 def reconcile(args: argparse.Namespace, result: Result) -> None:
     """Serialize role and timer runs against the same directory inode."""
+    relative = args.root.relative_to("/")
+    if ".." in relative.parts:
+        raise ValueError(f"{args.root}: a mail root cannot contain '..'")
     anchor = os.open("/", DIRECTORY)
     try:
-        with directory(anchor, args.root.relative_to("/")) as root:
+        with directory(
+            anchor, Path("/"), relative, create=args.prepare_root and not args.check
+        ) as root:
+            if args.prepare_root:
+                return
             fcntl.flock(root, fcntl.LOCK_EX)
             for box in records(args, result):
                 try:
                     with directory(
-                        root, box.path.parent, create=not args.check
+                        root, args.root, box.path.parent, create=not args.check
                     ) as parent:
                         result.homes += provision(parent, box, args.check)
                 except FileNotFoundError:
@@ -209,6 +232,10 @@ def reconcile(args: argparse.Namespace, result: Result) -> None:
                     ):
                         raise
                     result.skip(box.name, error.strerror)
+    except FileNotFoundError:
+        # Before storage creation, only the existing path components can be checked.
+        if not (args.prepare_root and args.check):
+            raise
     finally:
         os.close(anchor)
 
@@ -217,10 +244,17 @@ def main() -> int:
     """Report how many homes are missing or return a failure."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--prepare-root",
+        action="store_true",
+        help="validate the mail-root path and create missing directories unless --check is set",
+    )
     parser.add_argument("root", type=Path)
     for limit in ("uid_min", "uid_max", "gid_min", "gid_max"):
-        parser.add_argument(limit, type=int)
+        parser.add_argument(limit, type=int, nargs="?")
     args = parser.parse_args()
+    if not args.prepare_root and args.gid_max is None:
+        parser.error("provisioning requires uid_min, uid_max, gid_min and gid_max")
     result = Result()
     try:
         reconcile(args, result)

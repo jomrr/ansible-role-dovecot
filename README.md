@@ -1300,6 +1300,12 @@ enables the Dovecot service.
   mail_format overrides the default. Formats are maildir, mbox, sdbox and mdbox.
   The default is maildir. Homes are `<mail_root>/<name>`, mail is stored under
   ~/mail and mbox INBOX under ~/inbox.
+- In per_user mode, every directory from `/` through `dovecot_mail_root` must be
+  owned by UID 0 with group and other write permissions clear. The role checks
+  each existing component before creating storage and creates missing
+  directories with mode 0711. The provisioning helper checks the full path on
+  every run. Both stop at the first unsafe directory or symbolic link and report
+  its absolute path.
 - dovecot_first_valid_uid, dovecot_last_valid_uid, dovecot_first_valid_gid and
   dovecot_last_valid_gid bound the respective IDs inclusively. Both intervals
   default to 70000–99999. The role creates file-backed homes under a root-owned
@@ -1316,7 +1322,7 @@ enables the Dovecot service.
   interval. All records sharing a conflicting UID or overlapping home paths are
   skipped. Check mode reports the same errors and counts missing eligible homes.
   Failure to enumerate the userdb, loss of all effective lookups to backend
-  errors, an unsafe mail root or a filesystem write error fails the run.
+  errors or a filesystem write error fails the run.
 - Timer mode also reconciles at dovecot_home_interval seconds (default 300).
   With none the operator provisions external homes. Supply iterate_query for an
   enabled SQL userdb and iterate_filter and iterate_user for LDAP. Match their

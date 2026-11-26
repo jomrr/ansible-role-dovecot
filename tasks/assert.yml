@@ -25,25 +25,15 @@
     quiet: true
     fail_msg: Check delivery addresses, unique accounts, storage IDs, absolute paths and Sieve dependencies.
 
-- name: assert | Inspect the parent before enabling per-user storage
+# Run the reconciler's read-only path check before the mail root or the installed tool exists.
+- name: assert | Validate every directory from / to the per-user mail root
   become: true
   become_user: root
-  ansible.builtin.stat:
-    path: "{{ dovecot_mail_root }}"
-    get_checksum: false
-    get_mime: false
-  register: __dovecot_storage_root
-  when: dovecot_mail_ownership == 'per_user'
-
-- name: assert | Require a trusted parent before provisioning mailbox homes
-  ansible.builtin.assert:
-    that:
-      - >-
-        not __dovecot_storage_root.stat.exists or
-        (__dovecot_storage_root.stat.isdir and __dovecot_storage_root.stat.uid == 0
-         and not __dovecot_storage_root.stat.wgrp and not __dovecot_storage_root.stat.woth)
-    quiet: true
-    fail_msg: Prepare a root-owned private storage tree or select shared ownership for an existing vmail deployment.
+  ansible.builtin.script:
+    cmd: "dovecot_provision_homes.py --prepare-root --check {{ dovecot_mail_root | quote }}"
+    executable: /usr/bin/python3
+  check_mode: false
+  changed_when: false
   when: dovecot_mail_ownership == 'per_user'
 
 - name: assert | Require IMAP and reserve the Rspamd pipe for administrator scripts

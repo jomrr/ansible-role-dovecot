@@ -25,7 +25,17 @@
     system: true
   when: dovecot_mail_ownership == 'shared'
 
-- name: storage | Create the mailbox root
+# Set 0711 in mkdir itself, including for missing ancestors under a permissive umask or default ACL.
+- name: storage | Create missing directories in the per-user mail-root path
+  become: true
+  become_user: root
+  ansible.builtin.script:
+    cmd: "dovecot_provision_homes.py --prepare-root {{ dovecot_mail_root | quote }}"
+    executable: /usr/bin/python3
+    creates: "{{ dovecot_mail_root }}"
+  when: dovecot_mail_ownership == 'per_user'
+
+- name: storage | Set mailbox root ownership and permissions
   become: true
   become_user: root
   ansible.builtin.file:

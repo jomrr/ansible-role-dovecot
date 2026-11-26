@@ -109,24 +109,6 @@
     name: systemd-user-sessions.service
     state: started
 
-- name: DOVECOT | Provide writable homes only for deliberately invalid test records
-  become: true
-  become_user: root
-  ansible.builtin.file:
-    path: "/var/vmail/{{ __dovecot_home.name }}"
-    state: directory
-    owner: "{{ __dovecot_home.uid | string }}"
-    group: "{{ __dovecot_home.gid | string }}"
-    mode: "{{ __dovecot_home.mode | default('0700') }}"
-  loop:
-    - {name: '', uid: 0, gid: 0, mode: '0711'}
-    - {name: baduid@mail.test, uid: 69999, gid: 70100}
-    - {name: badgid@mail.test, uid: 70204, gid: 69999}
-    - {name: drift@mail.test, uid: 70205, gid: 70100, mode: '0750'}
-  loop_control:
-    loop_var: __dovecot_home
-    label: "{{ __dovecot_home.name }}"
-
 - name: DOVECOT | Install the shared mail clients used by the protocol checks
   become: true
   become_user: root
